@@ -10,8 +10,12 @@ from datetime import datetime, date
 import pytz
 from dotenv import load_dotenv 
 import os 
-from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole
+from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class
+from datetime import datetime, timedelta
+import pytz
 
+
+IST = pytz.timezone("Asia/Kolkata")
 
 app= Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -25,6 +29,99 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
 db.init_app(app)
 migrate=Migrate(app, db)
 socketio= SocketIO(app, cors_allowed_origins="*")
+
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime
+#from your_module import generate_weekly_sessions  # import your function
+
+
+def generate_weekly_sessions():
+    """
+    Creates class sessions for the upcoming academic week based on the timetable.
+    Runs every Sunday at midnight IST.
+    """
+
+    with app.app_context():   
+        today = datetime.now(IST).date()
+        #monday = today - timedelta(days=today.weekday())  # This week's Monday
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+
+        print("Weekly Session Generator Running at:", datetime.now(IST))
+
+        timetables = Timetable.query.all()
+
+        # Weekday order mapping
+        weekday_map = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        for t in timetables:
+            weekday_index = weekday_map.index(t.day_of_week)
+            session_date = monday + timedelta(days=weekday_index)
+
+            fsc = FacultySubjectClass.query.filter_by(
+                faculty_id=t.faculty_id,
+                subject_id=t.subject_id
+            ).first()
+
+            if not fsc:
+                print(f"[ERROR] No class assigned for faculty {t.faculty_id} and subject {t.subject_id}")
+                continue
+
+            class_id = fsc.class_id
+
+            # Avoid duplicates
+            with db.session.no_autoflush:
+                exists = ClassSession.query.filter_by(
+                    faculty_id=t.faculty_id,
+                    subject_id=t.subject_id,
+                    class_id=class_id,
+                    date=session_date,
+                    start_time=t.start_time
+                ).first()
+
+            if exists:
+                continue
+
+            session = ClassSession(
+                faculty_id=t.faculty_id,
+                subject_id=t.subject_id,
+                class_id=class_id, 
+                date=session_date,
+                start_time=t.start_time,
+                end_time=t.end_time,
+                topic=f"Weekly class: {t.subject.name}"
+            )
+
+            db.session.add(session)
+
+        db.session.commit()
+        print("Weekly class sessions generated successfully!")
+
+
+def start_scheduler():
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+
+    # Runs every Sunday at 00:49 AM IST
+    scheduler.add_job(
+        generate_weekly_sessions,
+        trigger="cron",
+        day_of_week="sun",
+        hour=10,
+        minute=21,
+    )
+
+    scheduler.start()
+    print("Scheduler started at:", datetime.now(IST))
+
+
+# Start scheduler once
+start_scheduler()
+
+
+
+@app.route("/api/generate-week-sessions", methods=["POST"])
+def generate_week():
+    return generate_weekly_sessions()
 
 
 @app.route("/test-db")
@@ -98,13 +195,19 @@ def login():
         
         print(f"User found: {user.name} ({user.role.value})")  # Debug log
         
+        faculty_id = None
+        if user.role == UserRole.FACULTY:
+            faculty = Faculty.query.filter_by(user_id=user.id).first()
+            if faculty:
+                faculty_id = faculty.id
         # In production, verify password hash
         return jsonify({
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "name": user.name,
-                "role": user.role.value
+                "role": user.role.value,
+                "faculty_id": faculty_id, 
             },
             "message": "Login successful"
         })
@@ -199,6 +302,31 @@ def get_student(student_id):
         "year": student.year
     })
 
+#getByFacultySubject: (subject_id, faculty_id) => api.get(`/students/${subject_id}/${faculty_id}`)
+@app.route("/api/sessions/<int:session_id>/students", methods=["GET"])
+def get_by_session(session_id):
+    session = ClassSession.query.get(session_id)
+    if not session:
+        return {"error": "Session not found"}, 404
+
+    # 2. Get the class_id from the session
+    class_id = session.class_id
+
+    # 3. Fetch all students in that class
+    students = Student.query.filter_by(class_id=class_id).all()
+
+    # 4. Convert to JSON format
+    return jsonify([{
+            "id": s.id,
+            "roll_no": s.roll_no,
+            "name": s.name,
+            "department": s.department,
+            "year": s.year,
+            "class_id": s.class_id
+        }
+        for s in students])
+        
+   
 # Faculty management endpoints
 @app.route("/api/faculty", methods=["GET"])
 def get_faculty():
@@ -236,6 +364,32 @@ def create_faculty():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
+@app.route("/api/faculty/<int:faculty_id>/classes", methods=["GET"])
+def get_faculty_classes(faculty_id):
+    rows = db.session.query(
+        FacultySubjectClass,
+        Subject,
+        Class
+    ).join(
+        Subject, FacultySubjectClass.subject_id == Subject.id
+    ).join(
+        Class, FacultySubjectClass.class_id == Class.id
+    ).filter(
+        FacultySubjectClass.faculty_id == faculty_id
+    ).all()
+
+    return jsonify([
+        {
+             "class_id": cls.id,
+            "department": cls.department,
+            "year": cls.year,
+            "section": cls.section,
+            "subject_name": subj.name
+        }
+        for (_, subj, cls) in rows
+    ])
+
 
 # Subject management endpoints
 @app.route("/api/subjects", methods=["GET"])
@@ -302,6 +456,7 @@ def create_class_session():
 @app.route("/api/class-sessions/faculty/<int:faculty_id>", methods=["GET"])
 def get_faculty_sessions(faculty_id):
     sessions = ClassSession.query.filter_by(faculty_id=faculty_id).all()
+    print(sessions)
     return jsonify([{
         "id": s.id,
         "subject_id": s.subject_id,
@@ -311,6 +466,22 @@ def get_faculty_sessions(faculty_id):
         "end_time": s.end_time.isoformat() if s.end_time else None,
         "topic": s.topic
     } for s in sessions])
+
+@app.route("/api/class-sessions/class/<int:class_id>", methods=["GET"])
+def get_sessions_by_class(class_id):
+    sessions = ClassSession.query.filter_by(class_id=class_id).all()
+    return jsonify([
+        {
+            "id": s.id,
+            "subject_id": s.subject_id,
+            "subject_name": s.subject.name,
+            "date": s.date.isoformat(),
+            "start_time": s.start_time.isoformat(),
+            "end_time": s.end_time.isoformat()
+        }
+        for s in sessions
+    ])
+
 
 @app.route("/api/attendance/mark", methods=["POST"])
 @require_faculty
@@ -326,6 +497,7 @@ def mark_attendance():
       "marked_by": 45
     }
     """
+
     try:
         data = request.get_json()
         print(f"Received attendance data: {data}")  # Debug log
@@ -523,9 +695,13 @@ def attendance_report():
 @app.route("/api/attendance/export", methods=["GET"])
 def export_attendance():
     q = db.session.query(Attendance).join(ClassSession, Attendance.session_id == ClassSession.id)
+    
+    session_id = request.args.get("session_id")
     student_id = request.args.get("student_id")
     department = request.args.get("department")
 
+    if session_id:
+        q = q.filter(Attendance.session_id == int(session_id))
     if student_id:
         q = q.filter(Attendance.student_id == int(student_id))
     if department:
@@ -586,7 +762,7 @@ def handle_leave_session(data):
 
 if __name__ == "__main__":
     # socketio.run(app, host="0.0.0.0", port=5000)
-    socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+    socketio.run(app, host="127.0.0.1", port=5001, debug=True, use_reloader=True)
 
 
 

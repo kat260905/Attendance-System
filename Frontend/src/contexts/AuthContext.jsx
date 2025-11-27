@@ -94,11 +94,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const isFaculty = () => {
-    return user?.role === 'faculty';
+    return user?.role === 'FACULTY';
   };
 
   const isAdmin = () => {
-    return user?.role === 'admin';
+    return user?.role === 'ADMIN';
   };
 
   const value = {

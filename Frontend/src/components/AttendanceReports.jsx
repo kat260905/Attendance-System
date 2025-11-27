@@ -165,14 +165,14 @@ export default function AttendanceReports() {
             <button
               onClick={generateReport}
               disabled={loading}
-              className="px-4 py-2 bg-indigo-600 text-black rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-gray-300 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2 disabled:opacity-50"
             >
               <BarChart3 size={18} />
               {loading ? 'Generating...' : 'Generate Report'}
             </button>
             <button
               onClick={exportReport}
-              className="px-4 py-2 bg-green-600 text-black rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-gray-300 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2"
             >
               <Download size={18} />
               Export CSV

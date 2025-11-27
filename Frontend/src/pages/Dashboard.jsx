@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Navigation from '../components/Navigation';
 import Attendance from './Attendance';
 import AttendanceReports from '../components/AttendanceReports';
+import MyClasses from "./MyClasses";
 
 export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState('attendance');
@@ -12,6 +13,8 @@ export default function Dashboard() {
         return <Attendance />;
       case 'reports':
         return <AttendanceReports />;
+      case 'myClasses':  
+        return <MyClasses />;
       default:
         return <Attendance />;
     }

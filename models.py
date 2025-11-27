@@ -5,9 +5,9 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 class UserRole(Enum):
-    ADMIN = "admin"
-    FACULTY = "faculty"
-    STUDENT = "student"
+    ADMIN = "ADMIN"
+    FACULTY = "FACULTY"
+    STUDENT = "STUDENT"
 
 class User(db.Model):
     __tablename__ = "users"
@@ -23,6 +23,10 @@ class Student(db.Model):
     name = db.Column(db.String(200), nullable=False)
     department = db.Column(db.String(100))
     year = db.Column(db.Integer)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+
+    class_rel = db.relationship("Class", backref="students")
+
 
 class Faculty(db.Model):
     __tablename__ = "faculties"
@@ -47,8 +51,22 @@ class ClassSession(db.Model):
     start_time = db.Column(db.Time)
     end_time = db.Column(db.Time)
     topic = db.Column(db.String(255))
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+
     subject = db.relationship("Subject")
     faculty = db.relationship("Faculty")
+
+class Class(db.Model):
+    __tablename__ = "classes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    department = db.Column(db.String(100))
+    year = db.Column(db.Integer)
+    section = db.Column(db.String(10))
+
+    sessions = db.relationship("ClassSession", backref="class_data", lazy=True)
+
+
 
 class AttendanceStatus(Enum):
     PRESENT = "present"
@@ -75,6 +93,35 @@ class AttendanceLog(db.Model):
     prev_status = db.Column(db.String(50))
     new_status = db.Column(db.String(50))
     changed_by = db.Column(db.Integer, db.ForeignKey("users.id"))
-    changed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    changed_at = db.Column(db.DateTime(timezone=True))
     note = db.Column(db.String(500))
     attendance = db.relationship("Attendance")
+
+class Timetable(db.Model):
+    __tablename__ = "timetables"
+
+    id = db.Column(db.Integer, primary_key=True)
+    faculty_id = db.Column(db.Integer, db.ForeignKey("faculties.id"), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey("subjects.id"), nullable=False)
+    #class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+    day_of_week = db.Column(db.String(10), nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    room = db.Column(db.String(50))
+
+    faculty = db.relationship("Faculty")
+    subject = db.relationship("Subject")
+
+class FacultySubjectClass(db.Model):
+    __tablename__ = "faculty_subject_class"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    faculty_id = db.Column(db.Integer, db.ForeignKey("faculties.id"), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey("subjects.id"), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+
+    # Relationships
+    faculty = db.relationship("Faculty", backref="subject_classes")
+    subject = db.relationship("Subject", backref="faculty_classes")
+    class_obj = db.relationship("Class", backref="faculty_subjects")

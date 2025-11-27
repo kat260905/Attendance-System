@@ -9,6 +9,7 @@ export default function Navigation({ currentPage, onPageChange }) {
   const navigationItems = [
     { id: 'attendance', label: 'Mark Attendance', icon: Users },
     { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
+    { id: 'myClasses', label: 'My Classes', icon: Users },
   ];
 
   const handleLogout = () => {
