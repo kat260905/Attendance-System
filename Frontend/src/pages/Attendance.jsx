@@ -36,6 +36,7 @@ export default function AttendancePage() {
 
   const loadInitialData = async () => {
     try {
+<<<<<<< HEAD
      
       setLoading(true);
       const [subjectsRes, sessionsRes] = await Promise.all([
@@ -47,6 +48,16 @@ export default function AttendancePage() {
       ]);
       
       //setStudents(studentsRes.data);
+=======
+      setLoading(true);
+      const [studentsRes, subjectsRes, sessionsRes] = await Promise.all([
+        studentAPI.getAll(),
+        subjectAPI.getAll(),
+        classSessionAPI.getAll()
+      ]);
+      
+      setStudents(studentsRes.data);
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
       setSubjects(subjectsRes.data);
       setSessions(sessionsRes.data);
       
@@ -97,6 +108,7 @@ export default function AttendancePage() {
     }
   };
 
+<<<<<<< HEAD
   const handleSessionChange = async (sessionId) => {
     const session = sessions.find(s => s.id === parseInt(sessionId));
     setSelectedSession(session);
@@ -106,6 +118,12 @@ export default function AttendancePage() {
       const studentsRes = await studentAPI.getBySession(session.id);
       setStudents(studentsRes.data);
 
+=======
+  const handleSessionChange = (sessionId) => {
+    const session = sessions.find(s => s.id === parseInt(sessionId));
+    setSelectedSession(session);
+    if (session) {
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
       loadSessionAttendance(session.id);
       socketService.joinSession(session.id);
     }
@@ -194,8 +212,12 @@ export default function AttendancePage() {
     }
   };
 
+<<<<<<< HEAD
   //const presentCount = Object.values(attendance).filter(Boolean).length;
   const presentCount = students.filter(s => attendance[s.id]).length;
+=======
+  const presentCount = Object.values(attendance).filter(Boolean).length;
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
   const absentCount = students.length - presentCount;
 
   if (loading) {
@@ -292,6 +314,7 @@ export default function AttendancePage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 mb-6">
+<<<<<<< HEAD
           <div className="bg-gray-50 border-2 border-green-200 rounded-lg p-4">
             <div className="flex items-center gap-3">
               <div className="bg-gray-500 rounded-full p-2">
@@ -311,6 +334,27 @@ export default function AttendancePage() {
               <div>
                 <div className="text-sm text-black-800">Absent</div>
                 <div className="text-2xl font-bold text-black-800">{absentCount}</div>
+=======
+          <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-500 rounded-full p-2">
+                <Check className="text-white" size={24} />
+              </div>
+              <div>
+                <div className="text-sm text-green-700">Present</div>
+                <div className="text-2xl font-bold text-green-800">{presentCount}</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-red-500 rounded-full p-2">
+                <X className="text-white" size={24} />
+              </div>
+              <div>
+                <div className="text-sm text-red-700">Absent</div>
+                <div className="text-2xl font-bold text-red-800">{absentCount}</div>
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               </div>
             </div>
           </div>
@@ -322,14 +366,22 @@ export default function AttendancePage() {
             <div className="flex gap-3">
               <button
                 onClick={markAllPresent}
+<<<<<<< HEAD
                 className="px-4 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2"
+=======
+                className="px-4 py-2 bg-green-500 text-black rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               >
                 <Check size={18} />
                 Mark All Present
               </button>
               <button
                 onClick={markAllAbsent}
+<<<<<<< HEAD
                 className="px-4 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2"
+=======
+                className="px-4 py-2 bg-red-500 text-black rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               >
                 <X size={18} />
                 Mark All Absent
@@ -339,7 +391,11 @@ export default function AttendancePage() {
               <button
                 onClick={exportAttendance}
                 disabled={!selectedSession}
+<<<<<<< HEAD
                 className="px-4 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+=======
+                className="px-4 py-2 bg-blue-500 text-black rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               >
                 <Download size={18} />
                 Export CSV
@@ -347,7 +403,11 @@ export default function AttendancePage() {
               <button
                 onClick={submitAttendance}
                 disabled={!selectedSession || submitting}
+<<<<<<< HEAD
                 className="px-6 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+=======
+                className="px-6 py-2 bg-indigo-600 text-black rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               >
                 <Save size={18} />
                 {submitting ? 'Submitting...' : 'Submit Attendance'}
@@ -359,7 +419,11 @@ export default function AttendancePage() {
         {/* Attendance Table */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           <table className="w-full">
+<<<<<<< HEAD
             <thead className="bg-blue-900 text-white">
+=======
+            <thead className="bg-indigo-600 text-white">
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Roll No</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Student Name</th>
@@ -390,7 +454,11 @@ export default function AttendancePage() {
                       type="checkbox"
                       checked={attendance[student.id] || false}
                       onChange={() => handleAttendanceChange(student.id)}
+<<<<<<< HEAD
                       className="w-5 h-5 text-indigo-600 rounded checked:bg-green-600 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+=======
+                      className="w-5 h-5 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
                     />
                   </td>
                   <td className="px-6 py-4 text-center">

@@ -5,9 +5,15 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 class UserRole(Enum):
+<<<<<<< HEAD
     ADMIN = "ADMIN"
     FACULTY = "FACULTY"
     STUDENT = "STUDENT"
+=======
+    ADMIN = "admin"
+    FACULTY = "faculty"
+    STUDENT = "student"
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 
 class User(db.Model):
     __tablename__ = "users"
@@ -23,10 +29,13 @@ class Student(db.Model):
     name = db.Column(db.String(200), nullable=False)
     department = db.Column(db.String(100))
     year = db.Column(db.Integer)
+<<<<<<< HEAD
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
 
     class_rel = db.relationship("Class", backref="students")
 
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 
 class Faculty(db.Model):
     __tablename__ = "faculties"
@@ -51,6 +60,7 @@ class ClassSession(db.Model):
     start_time = db.Column(db.Time)
     end_time = db.Column(db.Time)
     topic = db.Column(db.String(255))
+<<<<<<< HEAD
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
 
     subject = db.relationship("Subject")
@@ -68,6 +78,11 @@ class Class(db.Model):
 
 
 
+=======
+    subject = db.relationship("Subject")
+    faculty = db.relationship("Faculty")
+
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 class AttendanceStatus(Enum):
     PRESENT = "present"
     ABSENT = "absent"
@@ -93,6 +108,7 @@ class AttendanceLog(db.Model):
     prev_status = db.Column(db.String(50))
     new_status = db.Column(db.String(50))
     changed_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+<<<<<<< HEAD
     changed_at = db.Column(db.DateTime(timezone=True))
     note = db.Column(db.String(500))
     attendance = db.relationship("Attendance")
@@ -125,3 +141,8 @@ class FacultySubjectClass(db.Model):
     faculty = db.relationship("Faculty", backref="subject_classes")
     subject = db.relationship("Subject", backref="faculty_classes")
     class_obj = db.relationship("Class", backref="faculty_subjects")
+=======
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    note = db.Column(db.String(500))
+    attendance = db.relationship("Attendance")
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c

@@ -10,6 +10,7 @@ from datetime import datetime, date
 import pytz
 from dotenv import load_dotenv 
 import os 
+<<<<<<< HEAD
 from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class
 from datetime import datetime, timedelta
 import pytz
@@ -17,6 +18,11 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 
+=======
+from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole
+
+
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 app= Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
@@ -31,6 +37,7 @@ migrate=Migrate(app, db)
 socketio= SocketIO(app, cors_allowed_origins="*")
 
 
+<<<<<<< HEAD
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 #from your_module import generate_weekly_sessions  # import your function
@@ -124,6 +131,8 @@ def generate_week():
     return generate_weekly_sessions()
 
 
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 @app.route("/test-db")
 def test_db():
     try:
@@ -195,19 +204,26 @@ def login():
         
         print(f"User found: {user.name} ({user.role.value})")  # Debug log
         
+<<<<<<< HEAD
         faculty_id = None
         if user.role == UserRole.FACULTY:
             faculty = Faculty.query.filter_by(user_id=user.id).first()
             if faculty:
                 faculty_id = faculty.id
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
         # In production, verify password hash
         return jsonify({
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "name": user.name,
+<<<<<<< HEAD
                 "role": user.role.value,
                 "faculty_id": faculty_id, 
+=======
+                "role": user.role.value
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
             },
             "message": "Login successful"
         })
@@ -302,6 +318,7 @@ def get_student(student_id):
         "year": student.year
     })
 
+<<<<<<< HEAD
 #getByFacultySubject: (subject_id, faculty_id) => api.get(`/students/${subject_id}/${faculty_id}`)
 @app.route("/api/sessions/<int:session_id>/students", methods=["GET"])
 def get_by_session(session_id):
@@ -327,6 +344,8 @@ def get_by_session(session_id):
         for s in students])
         
    
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 # Faculty management endpoints
 @app.route("/api/faculty", methods=["GET"])
 def get_faculty():
@@ -365,6 +384,7 @@ def create_faculty():
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
+<<<<<<< HEAD
 @app.route("/api/faculty/<int:faculty_id>/classes", methods=["GET"])
 def get_faculty_classes(faculty_id):
     rows = db.session.query(
@@ -391,6 +411,8 @@ def get_faculty_classes(faculty_id):
     ])
 
 
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 # Subject management endpoints
 @app.route("/api/subjects", methods=["GET"])
 def get_subjects():
@@ -456,7 +478,10 @@ def create_class_session():
 @app.route("/api/class-sessions/faculty/<int:faculty_id>", methods=["GET"])
 def get_faculty_sessions(faculty_id):
     sessions = ClassSession.query.filter_by(faculty_id=faculty_id).all()
+<<<<<<< HEAD
     print(sessions)
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
     return jsonify([{
         "id": s.id,
         "subject_id": s.subject_id,
@@ -467,6 +492,7 @@ def get_faculty_sessions(faculty_id):
         "topic": s.topic
     } for s in sessions])
 
+<<<<<<< HEAD
 @app.route("/api/class-sessions/class/<int:class_id>", methods=["GET"])
 def get_sessions_by_class(class_id):
     sessions = ClassSession.query.filter_by(class_id=class_id).all()
@@ -483,6 +509,8 @@ def get_sessions_by_class(class_id):
     ])
 
 
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 @app.route("/api/attendance/mark", methods=["POST"])
 @require_faculty
 def mark_attendance():
@@ -497,7 +525,10 @@ def mark_attendance():
       "marked_by": 45
     }
     """
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
     try:
         data = request.get_json()
         print(f"Received attendance data: {data}")  # Debug log
@@ -695,6 +726,7 @@ def attendance_report():
 @app.route("/api/attendance/export", methods=["GET"])
 def export_attendance():
     q = db.session.query(Attendance).join(ClassSession, Attendance.session_id == ClassSession.id)
+<<<<<<< HEAD
     
     session_id = request.args.get("session_id")
     student_id = request.args.get("student_id")
@@ -702,6 +734,11 @@ def export_attendance():
 
     if session_id:
         q = q.filter(Attendance.session_id == int(session_id))
+=======
+    student_id = request.args.get("student_id")
+    department = request.args.get("department")
+
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
     if student_id:
         q = q.filter(Attendance.student_id == int(student_id))
     if department:
@@ -762,7 +799,11 @@ def handle_leave_session(data):
 
 if __name__ == "__main__":
     # socketio.run(app, host="0.0.0.0", port=5000)
+<<<<<<< HEAD
     socketio.run(app, host="127.0.0.1", port=5001, debug=True, use_reloader=True)
+=======
+    socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 
 
 

@@ -4,7 +4,11 @@
 
 @import "tailwindcss";
 @plugin "@tailwindcss/postcss";
+<<<<<<< HEAD
 /* 
+=======
+
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -72,4 +76,8 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+<<<<<<< HEAD
 } */
+=======
+}
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c

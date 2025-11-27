@@ -23,7 +23,10 @@ export const studentAPI = {
   create: (studentData) => api.post('/students', studentData),
   update: (id, studentData) => api.put(`/students/${id}`, studentData),
   delete: (id) => api.delete(`/students/${id}`),
+<<<<<<< HEAD
   getBySession: (session_id) => api.get(`/sessions/${session_id}/students`),
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 };
 
 // Faculty endpoints
@@ -33,7 +36,10 @@ export const facultyAPI = {
   create: (facultyData) => api.post('/faculty', facultyData),
   update: (id, facultyData) => api.put(`/faculty/${id}`, facultyData),
   delete: (id) => api.delete(`/faculty/${id}`),
+<<<<<<< HEAD
   getFacultyClasses: (facultyId) => api.get(`/faculty/${facultyId}/classes`),
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 };
 
 // Subject endpoints
@@ -54,7 +60,10 @@ export const classSessionAPI = {
   delete: (id) => api.delete(`/class-sessions/${id}`),
   getByFaculty: (facultyId) => api.get(`/class-sessions/faculty/${facultyId}`),
   getBySubject: (subjectId) => api.get(`/class-sessions/subject/${subjectId}`),
+<<<<<<< HEAD
   getByClass: (classId) => api.get(`/class-sessions/class/${classId}`),
+=======
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
 };
 
 // Attendance endpoints

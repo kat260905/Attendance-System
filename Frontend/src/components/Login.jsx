@@ -35,7 +35,11 @@ export default function Login() {
       const result = await register({
         ...formData,
         name: formData.email.split('@')[0], // Simple name generation
+<<<<<<< HEAD
         role: 'FACULTY' // Default role for demo
+=======
+        role: 'faculty' // Default role for demo
+>>>>>>> 2dc142d37b65257d66a1c8deb937623108ff4c2c
       });
       if (result.success) {
         // Registration successful - manually redirect to dashboard
