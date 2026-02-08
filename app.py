@@ -1,0 +1,1636 @@
+from flask import Flask, request, jsonify, send_file
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
+from flask_migrate import Migrate
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_cors import CORS
+from io import StringIO, BytesIO
+import csv 
+from datetime import datetime, date 
+import pytz
+from dotenv import load_dotenv 
+import os 
+from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class, ApprovedODRequest
+from datetime import datetime, timedelta
+import pytz
+from flask import request, jsonify
+import os
+
+
+IST = pytz.timezone("Asia/Kolkata")
+
+app= Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+load_dotenv()
+
+app.config['SQLALCHEMY_DATABASE_URI']=os.getenv('DATABASE_URI')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
+
+#db= SQLAlchemy(app)
+db.init_app(app)
+migrate=Migrate(app, db)
+socketio= SocketIO(app, cors_allowed_origins="*")
+
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime
+#from your_module import generate_weekly_sessions  # import your function
+
+
+def generate_weekly_sessions():
+    """
+    Creates class sessions for the upcoming academic week based on the timetable.
+    Runs every Sunday at midnight IST.
+    """
+
+    with app.app_context():   
+        today = datetime.now(IST).date()
+        #monday = today - timedelta(days=today.weekday())  # This week's Monday
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+
+        print("Weekly Session Generator Running at:", datetime.now(IST))
+
+        timetables = Timetable.query.all()
+
+        # Weekday order mapping
+        weekday_map = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        for t in timetables:
+            weekday_index = weekday_map.index(t.day_of_week)
+            session_date = monday + timedelta(days=weekday_index)
+
+            fsc = FacultySubjectClass.query.filter_by(
+                faculty_id=t.faculty_id,
+                subject_id=t.subject_id
+            ).first()
+
+            if not fsc:
+                print(f"[ERROR] No class assigned for faculty {t.faculty_id} and subject {t.subject_id}")
+                continue
+
+            class_id = fsc.class_id
+
+            # Avoid duplicates
+            with db.session.no_autoflush:
+                exists = ClassSession.query.filter_by(
+                    faculty_id=t.faculty_id,
+                    subject_id=t.subject_id,
+                    class_id=class_id,
+                    date=session_date,
+                    start_time=t.start_time,
+                    end_time=t.end_time
+                ).first()
+
+            if exists:
+                continue
+
+            session = ClassSession(
+                faculty_id=t.faculty_id,
+                subject_id=t.subject_id,
+                class_id=class_id, 
+                date=session_date,
+                start_time=t.start_time,
+                end_time=t.end_time,
+                topic=f"Weekly class: {t.subject.name}"
+            )
+
+            db.session.add(session)
+
+        db.session.commit()
+        print("Weekly class sessions generated successfully!")
+
+
+def start_scheduler():
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+
+    # Runs every Sunday at 00:49 AM IST
+    scheduler.add_job(
+        generate_weekly_sessions,
+        trigger="cron",
+        day_of_week="sun",
+        hour=10,
+        minute=21,
+    )
+
+    scheduler.start()
+    print("Scheduler started at:", datetime.now(IST))
+
+
+# Start scheduler once
+
+
+@app.route("/api/generate-week-sessions", methods=["POST"])
+def generate_week():
+    return generate_weekly_sessions()
+
+
+@app.route("/test-db")
+def test_db():
+    try:
+        result = db.session.execute(text("SELECT 1")).fetchall()
+        return f"Database connection successful! Result: {result}"
+    except Exception as e:
+        return f"Database connection failed: {e}"
+
+@app.route("/api/debug/users")
+def debug_users():
+    """Debug endpoint to check what users exist in the database"""
+    try:
+        users = User.query.all()
+        user_list = []
+        for user in users:
+            user_list.append({
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role.value
+            })
+        
+        return jsonify({
+            "status": "success",
+            "total_users": len(user_list),
+            "users": user_list
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": "Failed to fetch users",
+            "error": str(e)
+        }), 500
+   
+
+from functools import wraps
+# Helper: permission decorator placeholder (ERP will have auth)
+def require_faculty(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        # In production, check session/jwt and ensure user.role == faculty
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
+# Authentication endpoints
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        email = data.get("email")
+        password = data.get("password")  # In production, hash and verify password
+        
+        if not email:
+            return jsonify({"error": "Email is required"}), 400
+        
+        print(f"Login attempt for email: {email}")  # Debug log
+        
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            print(f"User not found for email: {email}")  # Debug log
+            # Check if any users exist in database
+            total_users = User.query.count()
+            print(f"Total users in database: {total_users}")  # Debug log
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        print(f"User found: {user.name} ({user.role.value})")  # Debug log
+        
+        faculty_id = None
+        if user.role == UserRole.FACULTY:
+            faculty = Faculty.query.filter_by(user_id=user.id).first()
+            if faculty:
+                faculty_id = faculty.id
+        # In production, verify password hash
+        return jsonify({
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role.value,
+                "faculty_id": faculty_id, 
+            },
+            "message": "Login successful"
+        })
+    except Exception as e:
+        print(f"Login error: {str(e)}")  # Debug log
+        return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    email = data.get("email")
+    name = data.get("name")
+    role = data.get("role", "student")
+    
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email already exists"}), 400
+    
+    try:
+        user = User(
+            email=email,
+            name=name,
+            role=UserRole(role)
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role.value
+            },
+            "message": "Registration successful"
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/auth/me", methods=["GET"])
+def get_current_user():
+    # In production, get user from JWT token
+    user_id = request.args.get("user_id", 1)  # Placeholder
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role.value
+    })
+
+# Student management endpoints
+@app.route("/api/students", methods=["GET"])
+def get_students():
+    faculty_id = request.args.get("faculty_id", type=int)
+    
+    if faculty_id:
+        # Get class IDs that this faculty handles
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        class_ids = list({r.class_id for r in fsc_rows})
+        
+        if not class_ids:
+            return jsonify([])
+        
+        # Get students in those classes
+        students = Student.query.filter(Student.class_id.in_(class_ids)).all()
+    else:
+        students = Student.query.all()
+    
+    return jsonify([{
+        "id": s.id,
+        "roll_no": s.roll_no,
+        "name": s.name,
+        "department": s.department,
+        "year": s.year,
+        "class_id": s.class_id
+    } for s in students])
+
+@app.route("/api/students", methods=["POST"])
+def create_student():
+    data = request.get_json()
+    try:
+        student = Student(
+            roll_no=data["roll_no"],
+            name=data["name"],
+            department=data.get("department"),
+            year=data.get("year")
+        )
+        db.session.add(student)
+        db.session.commit()
+        return jsonify({"id": student.id, "message": "Student created successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/students/<int:student_id>", methods=["GET"])
+def get_student(student_id):
+    student = Student.query.get_or_404(student_id)
+    return jsonify({
+        "id": student.id,
+        "roll_no": student.roll_no,
+        "name": student.name,
+        "department": student.department,
+        "year": student.year
+    })
+
+#getByFacultySubject: (subject_id, faculty_id) => api.get(`/students/${subject_id}/${faculty_id}`)
+@app.route("/api/sessions/<int:session_id>/students", methods=["GET"])
+def get_by_session(session_id):
+    session = ClassSession.query.get(session_id)
+    if not session:
+        return {"error": "Session not found"}, 404
+
+    # 2. Get the class_id from the session
+    class_id = session.class_id
+
+    # 3. Fetch all students in that class
+    students = Student.query.filter_by(class_id=class_id).all()
+
+    # 4. Convert to JSON format
+    return jsonify([{
+            "id": s.id,
+            "roll_no": s.roll_no,
+            "name": s.name,
+            "department": s.department,
+            "year": s.year,
+            "class_id": s.class_id
+        }
+        for s in students])
+        
+   
+# Faculty management endpoints
+@app.route("/api/faculty", methods=["GET"])
+def get_faculty():
+    faculty = Faculty.query.all()
+    return jsonify([{
+        "id": f.id,
+        "user_id": f.user_id,
+        "name": f.user.name,
+        "email": f.user.email,
+        "department": f.department
+    } for f in faculty])
+
+@app.route("/api/faculty", methods=["POST"])
+def create_faculty():
+    data = request.get_json()
+    try:
+        # Create user first
+        user = User(
+            email=data["email"],
+            name=data["name"],
+            role=UserRole.FACULTY
+        )
+        db.session.add(user)
+        db.session.flush()
+        
+        # Create faculty profile
+        faculty = Faculty(
+            user_id=user.id,
+            department=data.get("department")
+        )
+        db.session.add(faculty)
+        db.session.commit()
+        
+        return jsonify({"id": faculty.id, "message": "Faculty created successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/faculty/<int:faculty_id>/classes", methods=["GET"])
+def get_faculty_classes(faculty_id):
+    rows = db.session.query(
+        FacultySubjectClass,
+        Subject,
+        Class
+    ).join(
+        Subject, FacultySubjectClass.subject_id == Subject.id
+    ).join(
+        Class, FacultySubjectClass.class_id == Class.id
+    ).filter(
+        FacultySubjectClass.faculty_id == faculty_id
+    ).all()
+
+    return jsonify([
+        {
+             "class_id": cls.id,
+            "department": cls.department,
+            "year": cls.year,
+            "section": cls.section,
+            "subject_name": subj.name
+        }
+        for (_, subj, cls) in rows
+    ])
+
+
+# Subject management endpoints
+@app.route("/api/subjects", methods=["GET"])
+def get_subjects():
+    subjects = Subject.query.all()
+    return jsonify([{
+        "id": s.id,
+        "code": s.code,
+        "name": s.name,
+        "semester": s.semester
+    } for s in subjects])
+
+@app.route("/api/subjects", methods=["POST"])
+def create_subject():
+    data = request.get_json()
+    try:
+        subject = Subject(
+            code=data["code"],
+            name=data["name"],
+            semester=data.get("semester")
+        )
+        db.session.add(subject)
+        db.session.commit()
+        return jsonify({"id": subject.id, "message": "Subject created successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+# Class Session management endpoints
+@app.route("/api/class-sessions", methods=["GET"])
+def get_class_sessions():
+    sessions = ClassSession.query.all()
+    return jsonify([{
+        "id": s.id,
+        "subject_id": s.subject_id,
+        "subject_name": s.subject.name,
+        "faculty_id": s.faculty_id,
+        "faculty_name": s.faculty.user.name,
+        "date": s.date.isoformat(),
+        "start_time": s.start_time.isoformat() if s.start_time else None,
+        "end_time": s.end_time.isoformat() if s.end_time else None,
+        "topic": s.topic
+    } for s in sessions])
+
+@app.route("/api/class-sessions", methods=["POST"])
+def create_class_session():
+    data = request.get_json()
+    try:
+        session = ClassSession(
+            subject_id=data["subject_id"],
+            faculty_id=data["faculty_id"],
+            date=datetime.strptime(data["date"], "%Y-%m-%d").date(),
+            start_time=datetime.strptime(data["start_time"], "%H:%M").time() if data.get("start_time") else None,
+            end_time=datetime.strptime(data["end_time"], "%H:%M").time() if data.get("end_time") else None,
+            topic=data.get("topic")
+        )
+        db.session.add(session)
+        db.session.commit()
+        return jsonify({"id": session.id, "message": "Class session created successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/api/class-sessions/faculty/<int:faculty_id>", methods=["GET"])
+def get_faculty_sessions(faculty_id):
+    # By default, only show today's sessions for attendance marking
+    # Use ?all=true to get all sessions (past and future)
+    show_all = request.args.get("all", "false").lower() == "true"
+    today = datetime.now().date()
+    
+    query = ClassSession.query.filter_by(faculty_id=faculty_id)
+    
+    if not show_all:
+        # Only show today's sessions
+        query = query.filter(ClassSession.date == today)
+    
+    # Order by date descending (most recent first)
+    sessions = query.order_by(ClassSession.date.desc(), ClassSession.start_time.asc()).all()
+    print(f"Faculty {faculty_id} sessions (today_only={not show_all}): {len(sessions)} found")
+    
+    return jsonify([{
+        "id": s.id,
+        "subject_id": s.subject_id,
+        "subject_name": s.subject.name,
+        "date": s.date.isoformat(),
+        "start_time": s.start_time.isoformat() if s.start_time else None,
+        "end_time": s.end_time.isoformat() if s.end_time else None,
+        "topic": s.topic
+    } for s in sessions])
+
+@app.route("/api/class-sessions/class/<int:class_id>", methods=["GET"])
+def get_sessions_by_class(class_id):
+    # Returns ALL sessions (past and future) for review and attendance editing
+    # Filter by faculty_id if provided to show only that faculty's sessions
+    faculty_id = request.args.get("faculty_id", type=int)
+    
+    query = ClassSession.query.filter_by(class_id=class_id)
+    if faculty_id:
+        query = query.filter_by(faculty_id=faculty_id)
+    
+    # Order by date descending (most recent first), then by start time
+    sessions = query.order_by(ClassSession.date.desc(), ClassSession.start_time.asc()).all()
+    
+    print(f"Class {class_id} sessions (faculty_id={faculty_id}): {len(sessions)} found")
+    
+    return jsonify([
+        {
+            "id": s.id,
+            "subject_id": s.subject_id,
+            "subject_name": s.subject.name,
+            "faculty_id": s.faculty_id,
+            "date": s.date.isoformat(),
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None
+        }
+        for s in sessions
+    ])
+
+
+@app.route("/api/attendance/mark", methods=["POST"])
+@require_faculty
+def mark_attendance():
+    """
+    Payload example:
+    {
+      "session_id": 12,
+      "records": [
+        {"student_id": 101, "status": "present"},
+        {"student_id": 102, "status": "absent"}
+      ],
+      "marked_by": 45
+    }
+    """
+
+    try:
+        data = request.get_json()
+        print(f"Received attendance data: {data}")  # Debug log
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        session_id = data.get("session_id")
+        records = data.get("records")
+        marked_by = data.get("marked_by")
+        
+        if not session_id:
+            return jsonify({"error": "session_id is required"}), 400
+        if not records:
+            return jsonify({"error": "records is required"}), 400
+        if not marked_by:
+            return jsonify({"error": "marked_by is required"}), 400
+            
+        print(f"Processing attendance for session {session_id}, marked by {marked_by}, {len(records)} records")  # Debug log
+        
+        results = []
+
+        for r in records:
+            student_id = r["student_id"]
+            status = AttendanceStatus(r.get("status"))
+            reason = r.get("reason")
+
+            att = Attendance.query.filter_by(session_id=session_id, student_id=student_id).first()
+
+            if not att:
+                att = Attendance(
+                    session_id=session_id,
+                    student_id=student_id,
+                    status=status,
+                    marked_by=marked_by,
+                    marked_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    reason=reason
+                )
+                db.session.add(att)
+                db.session.flush()
+
+                log = AttendanceLog(
+                    attendance_id=att.id,
+                    prev_status=None,
+                    new_status=status.value,
+                    changed_by=marked_by,
+                    changed_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    note="initial mark"
+                )
+                db.session.add(log)
+            else:
+                prev = att.status.value
+                att.status = status
+                att.marked_by = marked_by
+                att.marked_at = datetime.now(pytz.timezone('Asia/Kolkata'))
+                att.reason = reason
+
+                log = AttendanceLog(
+                    attendance_id=att.id,
+                    prev_status=prev,
+                    new_status=status.value,
+                    changed_by=marked_by,
+                    changed_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    note="updated mark"
+                )
+                db.session.add(log)
+
+            results.append({"student_id": student_id, "status": status.value})
+
+            payload = {
+                "session_id": session_id,
+                "student_id": student_id,
+                "status": status.value,
+                "marked_by": marked_by,
+                "marked_at": datetime.now(pytz.timezone('Asia/Kolkata')).isoformat()
+            }
+            socketio.emit('attendance_marked', payload)
+
+        db.session.commit()
+        print(f"Successfully marked attendance for {len(results)} students")  # Debug log
+        return jsonify({"marked": results}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(traceback.format_exc())   # <-- This will show the full error in terminal
+        return jsonify({"error": str(e)}), 400
+        '''
+        db.session.rollback()
+        print(f"Error marking attendance: {str(e)}")  # Debug log
+        return jsonify({"error": str(e)}), 400
+        '''
+
+
+@app.route("/api/attendance/mark-by-suffix", methods=["POST"])
+@require_faculty
+def mark_attendance_by_suffix():
+    """
+    Mark attendance by last 3 digits of register number.
+    Payload example:
+    {
+      "session_id": 12,
+      "suffixes": "135, 030, 45",  // comma or space separated
+      "status": "present" or "absent",
+      "marked_by": 45
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        session_id = data.get("session_id")
+        suffixes_input = data.get("suffixes", "")
+        status_str = data.get("status", "present")
+        marked_by = data.get("marked_by")
+        
+        if not session_id:
+            return jsonify({"error": "session_id is required"}), 400
+        if not suffixes_input:
+            return jsonify({"error": "suffixes is required"}), 400
+        if not marked_by:
+            return jsonify({"error": "marked_by is required"}), 400
+        
+        # Parse suffixes - support comma, space, or newline separated
+        import re
+        suffix_list = re.split(r'[,\s\n]+', suffixes_input.strip())
+        suffix_list = [s.strip().zfill(3) for s in suffix_list if s.strip()]
+        
+        if not suffix_list:
+            return jsonify({"error": "No valid suffixes provided"}), 400
+        
+        # Get all students for this session
+        session = ClassSession.query.get(session_id)
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+            
+        students = Student.query.filter_by(class_id=session.class_id).all()
+        
+        status = AttendanceStatus(status_str)
+        matched_students = []
+        not_found_suffixes = []
+        
+        for suffix in suffix_list:
+            # Find student whose roll_no ends with the suffix (last 3 digits)
+            found = False
+            for student in students:
+                if student.roll_no.endswith(suffix) or student.roll_no.endswith(suffix.lstrip('0')):
+                    # Also check if the suffix without leading zeros matches
+                    # e.g., "30" should match roll_no ending with "030" or "30"
+                    matched_students.append(student)
+                    found = True
+                    break
+            
+            if not found:
+                # Try matching with the suffix as-is (without zero padding)
+                original_suffix = suffix.lstrip('0') or '0'
+                for student in students:
+                    if student.roll_no[-len(original_suffix):] == original_suffix:
+                        matched_students.append(student)
+                        found = True
+                        break
+            
+            if not found:
+                not_found_suffixes.append(suffix)
+        
+        results = []
+        for student in matched_students:
+            att = Attendance.query.filter_by(session_id=session_id, student_id=student.id).first()
+            
+            if not att:
+                att = Attendance(
+                    session_id=session_id,
+                    student_id=student.id,
+                    status=status,
+                    marked_by=marked_by,
+                    marked_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    reason=f"Marked via suffix entry"
+                )
+                db.session.add(att)
+                db.session.flush()
+                
+                log = AttendanceLog(
+                    attendance_id=att.id,
+                    prev_status=None,
+                    new_status=status.value,
+                    changed_by=marked_by,
+                    changed_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    note="marked via suffix entry"
+                )
+                db.session.add(log)
+            else:
+                prev = att.status.value
+                att.status = status
+                att.marked_by = marked_by
+                att.marked_at = datetime.now(pytz.timezone('Asia/Kolkata'))
+                
+                log = AttendanceLog(
+                    attendance_id=att.id,
+                    prev_status=prev,
+                    new_status=status.value,
+                    changed_by=marked_by,
+                    changed_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+                    note="updated via suffix entry"
+                )
+                db.session.add(log)
+            
+            results.append({
+                "student_id": student.id,
+                "roll_no": student.roll_no,
+                "name": student.name,
+                "status": status.value
+            })
+            
+            # Emit socket event
+            payload = {
+                "session_id": session_id,
+                "student_id": student.id,
+                "status": status.value,
+                "marked_by": marked_by,
+                "marked_at": datetime.now(pytz.timezone('Asia/Kolkata')).isoformat()
+            }
+            socketio.emit('attendance_marked', payload)
+        
+        db.session.commit()
+        
+        return jsonify({
+            "marked": results,
+            "not_found": not_found_suffixes,
+            "message": f"Marked {len(results)} students as {status_str}"
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 400
+
+
+# Get attendance for a session
+@app.route("/api/attendance/session/<int:session_id>", methods=["GET"])
+def get_session_attendance(session_id):
+    rows = db.session.query(Attendance).filter_by(session_id=session_id).all()
+    return jsonify([{
+        "attendance_id": r.id,
+        "student_id": r.student_id,
+        "student_name": r.student.name,
+        "department": r.student.department,
+        "status": r.status.value,
+        "marked_by": r.marked_by,
+        "marked_at": r.marked_at.isoformat(),
+        "reason": r.reason
+    } for r in rows])
+
+
+# Update attendance
+@app.route("/api/attendance/<int:attendance_id>", methods=["PUT"])
+@require_faculty
+def update_attendance(attendance_id):
+    data = request.get_json()
+    new_status = data.get("status")
+    changed_by = data.get("changed_by")
+    reason = data.get("reason")
+
+    att = Attendance.query.get_or_404(attendance_id)
+    prev = att.status.value
+    att.status = AttendanceStatus(new_status)
+    att.marked_by = changed_by
+    att.marked_at = datetime.now(pytz.timezone('Asia/Kolkata'))
+    att.reason = reason
+
+    log = AttendanceLog(
+        attendance_id=att.id,
+        prev_status=prev,
+        new_status=new_status,
+        changed_by=changed_by,
+        changed_at=datetime.now(pytz.timezone('Asia/Kolkata')),
+        note="manual update"
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    payload = {
+        "attendance_id": att.id,
+        "student_id": att.student_id,
+        "new_status": new_status,
+        "changed_by": changed_by
+    }
+    socketio.emit('attendance_updated', payload)
+
+    return jsonify({"ok": True})
+
+
+# Attendance report with optional department filter
+@app.route("/api/attendance/report", methods=["GET"])
+def attendance_report():
+    """
+    GET params:
+    - student_id
+    - faculty_id (restricts to students in classes this faculty handles)
+    - subject_id
+    - class_id
+    - from (YYYY-MM-DD)
+    - to (YYYY-MM-DD)
+    """
+    q = db.session.query(Attendance).join(ClassSession, Attendance.session_id == ClassSession.id)
+    student_id = request.args.get("student_id")
+    faculty_id = request.args.get("faculty_id", type=int)
+    class_id = request.args.get("class_id", type=int)
+    subject_id = request.args.get("subject_id")
+    department = request.args.get("department")  # optional filter
+    from_date = request.args.get("from")
+    to_date = request.args.get("to")
+
+    if faculty_id:
+        # Restrict to students in classes this faculty handles
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        class_ids = list({r.class_id for r in fsc_rows})
+        if class_ids:
+            q = q.filter(ClassSession.class_id.in_(class_ids))
+        else:
+            return jsonify({"total_records": 0, "summary": {}, "student_reports": []})
+
+    if class_id:
+        q = q.filter(ClassSession.class_id == class_id)
+    if student_id:
+        q = q.filter(Attendance.student_id == int(student_id))
+    if subject_id:
+        q = q.filter(ClassSession.subject_id == int(subject_id))
+    if department:
+        q = q.join(Student).filter(Student.department == department)
+    if from_date:
+        q = q.filter(ClassSession.date >= datetime.strptime(from_date, "%Y-%m-%d").date())
+    if to_date:
+        q = q.filter(ClassSession.date <= datetime.strptime(to_date, "%Y-%m-%d").date())
+
+    items = q.all()
+
+    # Overall summary
+    summary = {}
+    total = 0
+    for it in items:
+        s = it.status.value
+        summary[s] = summary.get(s, 0) + 1
+        total += 1
+
+    # Student-wise attendance report
+    student_attendance = {}
+    for it in items:
+        sid = it.student_id
+        if sid not in student_attendance:
+            student_attendance[sid] = {
+                "student_id": sid,
+                "student_name": it.student.name,
+                "roll_no": it.student.roll_no,
+                "total": 0,
+                "present": 0,
+                "absent": 0,
+                "od": 0
+            }
+        student_attendance[sid]["total"] += 1
+        status = it.status.value
+        if status == "present":
+            student_attendance[sid]["present"] += 1
+        elif status == "absent":
+            student_attendance[sid]["absent"] += 1
+        elif status == "od":
+            student_attendance[sid]["od"] += 1
+
+    # Calculate percentage and create list
+    student_reports = []
+    for sid, data in student_attendance.items():
+        if data["total"] > 0:
+            data["present_percentage"] = round((data["present"] + data["od"]) / data["total"] * 100, 2)
+        else:
+            data["present_percentage"] = 0
+        student_reports.append(data)
+
+    # Sort by roll number
+    student_reports.sort(key=lambda x: x["roll_no"])
+
+    return jsonify({
+        "total_records": total, 
+        "summary": summary,
+        "student_reports": student_reports
+    })
+
+
+# CSV export
+@app.route("/api/attendance/export", methods=["GET"])
+def export_attendance():
+    q = db.session.query(Attendance).join(ClassSession, Attendance.session_id == ClassSession.id)
+    
+    session_id = request.args.get("session_id")
+    student_id = request.args.get("student_id")
+    department = request.args.get("department")
+    faculty_id = request.args.get("faculty_id", type=int)
+
+    if faculty_id:
+        # Restrict to faculty's classes
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        class_ids = list({r.class_id for r in fsc_rows})
+        if class_ids:
+            q = q.filter(ClassSession.class_id.in_(class_ids))
+        else:
+            q = q.filter(False)  # No results if faculty has no classes
+    
+    if session_id:
+        q = q.filter(Attendance.session_id == int(session_id))
+    if student_id:
+        q = q.filter(Attendance.student_id == int(student_id))
+    if department:
+        q = q.join(Student).filter(Student.department == department)
+
+    rows = q.all()
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(["attendance_id", "session_id", "session_date", "student_id", "student_name", "department", "status", "marked_by", "marked_at", "reason"])
+
+    for r in rows:
+        writer.writerow([
+            r.id,
+            r.session_id,
+            r.session.date.isoformat(),
+            r.student_id,
+            r.student.name,
+            r.student.department,
+            r.status.value,
+            r.marked_by,
+            r.marked_at.isoformat(),
+            r.reason or ""
+        ])
+
+    mem = BytesIO()
+    mem.write(si.getvalue().encode("utf-8"))
+    mem.seek(0)
+    si.close()
+
+    return send_file(
+        mem,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"attendance_export_{date.today().isoformat()}.csv"
+    )
+
+
+'''
+import cv2
+import numpy as np
+import tempfile
+from flask import request, jsonify
+import easyocr
+
+reader = easyocr.Reader(['en'], gpu=False)
+
+@app.route("/api/attendance/photo-upload", methods=["POST"])
+def upload_attendance_photo():
+    if "image" not in request.files:
+        return jsonify({"error": "Image is required"}), 400
+
+    file = request.files["image"]
+
+    temp_path = tempfile.mktemp(suffix=".png")
+    file.save(temp_path)
+
+    img = cv2.imread(temp_path)
+    if img is None:
+        return jsonify({"error": "Invalid image"}), 400
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # --- OCR full page ---
+    ocr_results = reader.readtext(gray, detail=1)
+
+    # --- Extract roll numbers & names ---
+    rows = []
+    for (bbox, text, conf) in ocr_results:
+        text = text.strip().replace(" ", "")
+
+        # roll number detection
+        if text.isdigit() and len(text) >= 10:
+            # Get a y-position to align rows
+            y = int((bbox[0][1] + bbox[2][1]) / 2)
+            rows.append({"roll_no": text, "y": y})
+
+    # Remove duplicates
+    unique = {}
+    for r in rows:
+        unique[r["roll_no"]] = r["y"]
+    rows = [{"roll_no": r, "y": unique[r]} for r in unique]
+
+    # Sort by Y position (top to bottom)
+    rows = sorted(rows, key=lambda x: x["y"])
+
+    # Map roll number → student name via DB
+    output = []
+    for r in rows:
+        student = Student.query.filter_by(roll_no=r["roll_no"]).first()
+        if not student:
+            continue
+
+        output.append({
+            "roll_no": r["roll_no"],
+            "student_id": student.id,
+            "name": student.name,
+            "status": "absent"  # default, will flip to present if tick found
+        })
+
+    # --- Detect tick marks in the right grid ---
+    thresh = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        15, 3
+    )
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    tick_positions = []
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        if 12 < w < 40 and 12 < h < 40:  # likely a tick mark
+            tick_positions.append((x, y))
+
+    # Mark present if tick is near row
+    for row in output:
+        ry = row["y"]
+        for (tx, ty) in tick_positions:
+            if abs(ty - ry) < 18:  # row match tolerance
+                row["status"] = "present"
+
+    return jsonify({"results": output})
+'''
+
+
+'''
+from paddleocr import PaddleOCR
+import cv2
+import numpy as np
+import tempfile
+from flask import request, jsonify
+
+ocr = PaddleOCR(lang='en')
+
+@app.route("/api/attendance/photo-upload", methods=["POST"])
+def upload_attendance_photo():
+    """
+    Extract roll numbers + present/absent from uploaded logbook image.
+    Returns list of {student_id, roll_no, name, status}
+    """
+    if "image" not in request.files:
+        return jsonify({"error": "Image is required"}), 400
+
+    file = request.files["image"]
+
+    # Save temporary copy
+    temp_path = tempfile.mktemp(suffix=".png")
+    file.save(temp_path)
+
+    img = cv2.imread(temp_path)
+
+    if img is None:
+        return jsonify({"error": "Invalid image"}), 400
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (3,3), 0)
+    thresh = cv2.adaptiveThreshold(
+        blur, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        15, 4
+    )
+
+    # Detect horizontal & vertical lines (table)
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
+    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
+
+    horizontal = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, horiz_kernel)
+    vertical = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, vert_kernel)
+
+    grid = cv2.add(horizontal, vertical)
+
+    contours, _ = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    cells = []
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        if w > 40 and h > 20:  # keep only real cells
+            cells.append((x, y, w, h))
+
+    # Sort cells top-to-bottom left-to-right
+    cells = sorted(cells, key=lambda b: (b[1], b[0]))
+
+    # Extract OCR text for roll_no + name column
+    row_data = []
+    for (x, y, w, h) in cells:
+        if x > img.shape[1] * 0.35:  # names & roll numbers are on left 35%
+            continue
+        if w < 180:  # ignore very small cells
+            continue
+
+        crop = img[y:y+h, x:x+w]
+        result = ocr.ocr(crop, cls=True)
+
+        txt = ""
+        for line in result:
+            for word in line:
+                txt += word[1][0] + " "
+
+        txt = txt.strip()
+
+        # Identify roll number pattern
+        roll = None
+        for word in txt.split():
+            if word.isdigit() and len(word) >= 10:
+                roll = word
+
+        if roll:
+            row_data.append({
+                "roll_no": roll,
+                "y": y,
+                "name": txt.replace(roll, "").strip()
+            })
+
+    # Detect tick marks in right-side cells
+    output = []
+    for row in row_data:
+        # Search a cell next to this row
+        y = row["y"]
+
+        # find nearest cell in row but to the right side (attendance marks)
+        row_cells = [(x,yc,w,h) for (x,yc,w,h) in cells if abs(yc - y) < 15 and x > img.shape[1]*0.35]
+        
+        present = False
+        for (x,yc,w,h) in row_cells:
+            crop = img[yc:yc+h, x:x+w]
+            crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            _, th = cv2.threshold(crop_gray, 150, 255, cv2.THRESH_BINARY_INV)
+
+            if cv2.countNonZero(th) > 40:  # tick detected
+                present = True
+                break
+        
+        output.append({
+            "roll_no": row["roll_no"],
+            "name": row["name"],
+            "status": "present" if present else "absent"
+        })
+
+    # Now convert roll_no → student_id from DB
+
+    final_results = []
+    for item in output:
+        student = Student.query.filter_by(roll_no=item["roll_no"]).first()
+
+        if not student:
+            continue
+
+        final_results.append({
+            "student_id": student.id,
+            "roll_no": item["roll_no"],
+            "name": student.name,
+            "status": item["status"]
+        })
+
+    return jsonify({"results": final_results})
+'''
+
+
+import easyocr
+from rapidfuzz import fuzz, process
+from PIL import Image
+import numpy as np
+#import paddleocr
+
+@app.route("/api/attendance/photo-upload", methods=["POST"])
+@require_faculty
+def attendance_photo_upload():
+
+    session_id = request.form.get("session_id")
+    faculty_id = request.form.get("faculty_id")
+    file = request.files.get("image")
+
+    if not session_id or not file:
+        return jsonify({"error": "session_id and image required"}), 400
+
+    # Save image temporarily
+    save_path = f"uploads/{session_id}_{faculty_id}.jpg"
+    file.save(save_path)
+
+    # Load session students from DB
+    session = ClassSession.query.get(session_id)
+    students = Student.query.filter_by(class_id=session.class_id).all()
+
+    # OCR
+    reader = easyocr.Reader(['en'])
+    image = Image.open(save_path)
+    result = reader.readtext(np.array(image), detail=0)
+
+    text_block = "\n".join(result)
+
+    output = []
+    for s in students:
+
+        roll_match = str(s.roll_no) in text_block
+        name_match = process.extractOne(
+            s.name, text_block.split("\n"), scorer=fuzz.token_set_ratio
+        )
+
+        name_ok = name_match and name_match[1] > 70
+
+        present = roll_match or name_ok
+
+        output.append({
+            "student_id": s.id,
+            "roll_no": s.roll_no,
+            "name": s.name,
+            "status": "present" if present else "absent"
+        })
+
+    return jsonify({
+        "session_id": session_id,
+        "results": output
+    })
+
+
+# import cv2
+# import numpy as np
+# from paddleocr import PaddleOCR
+# from flask import request, jsonify
+# import tempfile
+# import pytz
+# import os
+
+# ocr = PaddleOCR(lang='en')
+
+# @app.route("/api/attendance/photo-extract", methods=["POST"])
+# def extract_attendance_from_photo():
+#     # Step 1: GET FILE
+#     if "file" not in request.files:
+#         return jsonify({"error": "Image file is required"}), 400
+
+#     file = request.files["file"]
+
+#     # Save temp image
+#     temp_path = tempfile.mktemp(suffix=".png")
+#     file.save(temp_path)
+
+#     # Load image
+#     img = cv2.imread(temp_path)
+
+#     # ------------------------------
+#     # STEP 2: TABLE GRID DETECTION
+#     # ------------------------------
+#     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+#     blur = cv2.GaussianBlur(gray, (3,3), 0)
+#     thresh = cv2.adaptiveThreshold(blur, 255, 
+#                                    cv2.ADAPTIVE_THRESH_MEAN_C,
+#                                    cv2.THRESH_BINARY_INV, 15, 4)
+
+#     # Horizontal lines
+#     horizontal = thresh.copy()
+#     horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (50,1))
+#     horizontal = cv2.morphologyEx(horizontal, cv2.MORPH_OPEN, horiz_kernel)
+
+#     # Vertical lines
+#     vertical = thresh.copy()
+#     vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1,50))
+#     vertical = cv2.morphologyEx(vertical, cv2.MORPH_OPEN, vert_kernel)
+
+#     # Combine table lines
+#     table_mask = cv2.add(horizontal, vertical)
+
+#     # Find contours (cells)
+#     contours, _ = cv2.findContours(table_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+#     # Filter valid cells
+#     cells = []
+#     for cnt in contours:
+#         x, y, w, h = cv2.boundingRect(cnt)
+#         if w > 40 and h > 20:
+#             cells.append((x, y, w, h))
+
+#     # Sort top to bottom, left to right
+#     cells = sorted(cells, key=lambda b: (b[1], b[0]))
+
+#     # -------------------------------------------------
+#     # STEP 3: OCR row labels (roll_no + name)
+#     # -------------------------------------------------
+#     rows = []
+#     for (x, y, w, h) in cells:
+#         crop = img[y:y+h, x:x+w]
+
+#         # Skip small cells
+#         if w < 200:  
+#             continue
+
+#         result = ocr.ocr(crop, cls=True)
+#         text = ""
+#         for line in result:
+#             text += " ".join([word[1][0] for word in line]) + " "
+
+#         # Find roll_no and name
+#         if any(char.isdigit() for char in text):
+#             rows.append({
+#                 "row_y": y,
+#                 "full": text.strip()
+#             })
+
+#     # -------------------------------------------------
+#     # STEP 4: Extract attendance from right-side cells
+#     # -------------------------------------------------
+#     attendance_dict = {}  # { "2023101001001": { "1": "present", "2": "absent" } }
+
+#     for student in rows:
+#         roll_no = None
+#         name = None
+#         parts = student["full"].split()
+
+#         # Extract roll_no
+#         for p in parts:
+#             if p.isdigit() and len(p) >= 10:
+#                 roll_no = p
+
+#         if not roll_no:
+#             continue
+
+#         attendance_dict[roll_no] = {}
+
+#     # Now detect ticks (✓)
+#     for (x, y, w, h) in cells:
+#         crop = img[y:y+h, x:x+w]
+
+#         # Detect tick (simple threshold)
+#         crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+#         _, th = cv2.threshold(crop_gray, 150, 255, cv2.THRESH_BINARY_INV)
+#         nonzero = cv2.countNonZero(th)
+
+#         if nonzero < 50:
+#             continue  # ignore empty cells
+
+#         # Map cell row → student
+#         student_row = min(rows, key=lambda r: abs(r["row_y"] - y))
+#         roll = [p for p in student_row["full"].split() if p.isdigit()][0]
+
+#         # Map cell column → date index
+#         date_index = int((x / 50))  # approximate: 1 cell = 50px
+
+#         attendance_dict[roll][date_index] = "present"
+
+#     return jsonify(attendance_dict)
+
+
+
+@app.route("/api/od/approve", methods=["POST"])
+def approve_od():
+    """
+    Payload:
+    {
+      "student_id": 12,
+      "class_id": 3,
+      "date": "2025-11-27",
+      "session_id": 45,           -- optional
+      "reason": "Sports meet",
+      "approved_by": 1            -- admin user id
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    student_id = data.get("student_id")
+    class_id = data.get("class_id")
+    date_str = data.get("date")
+    session_id = data.get("session_id")
+    reason = data.get("reason")
+    approved_by = data.get("approved_by")
+
+    if not (student_id and class_id and date_str and approved_by):
+        return jsonify({"error": "student_id, class_id, date and approved_by are required"}), 400
+
+    try:
+        od_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+
+    try:
+        od = ApprovedODRequest(
+            student_id=student_id,
+            class_id=class_id,
+            session_id=session_id,
+            date=od_date,
+            reason=reason,
+            approved_by=approved_by,
+            approved_at=datetime.now(IST)
+        )
+        db.session.add(od)
+        db.session.commit()
+        return jsonify({"ok": True, "od_id": od.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+
+# --- Faculty: list pending OD requests relevant to their classes ---
+@app.route("/api/od/pending", methods=["GET"])
+@require_faculty
+def get_pending_od():
+    """
+    Query: ?faculty_id=2
+    We'll return pending OD requests for classes that the faculty handles.
+    """
+    faculty_id = request.args.get("faculty_id", type=int)
+    if not faculty_id:
+        return jsonify({"error": "faculty_id is required"}), 400
+
+    # Get class ids that this faculty handles (via faculty_subject_class or faculty->class mapping)
+    fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+    class_ids = {r.class_id for r in fsc_rows}
+    if not class_ids:
+        return jsonify([])
+
+    # pending requests for those classes and applied = false
+    pending = ApprovedODRequest.query.filter(
+        ApprovedODRequest.class_id.in_(list(class_ids)),
+        ApprovedODRequest.applied == False
+    ).all()
+
+    result = []
+    for p in pending:
+        result.append({
+            "id": p.id,
+            "student_id": p.student_id,
+            "student_name": p.student.name if p.student else None,
+            "class_id": p.class_id,
+            "session_id": p.session_id,
+            "date": p.date.isoformat(),
+            "reason": p.reason,
+            "approved_by": p.approved_by,
+            "approved_at": p.approved_at.isoformat() if p.approved_at else None
+        })
+    return jsonify(result)
+
+@app.route("/api/od/apply/<int:od_id>", methods=["PUT"])
+@require_faculty
+def apply_od(od_id):
+    """
+    Faculty clicks 'Apply' on a pending OD request.
+
+    Payload:
+    {
+      "faculty_id": 2  -- the acting faculty id (to set applied_by)
+    }
+    """
+    data = request.get_json() or {}
+    faculty_id = data.get("faculty_id")
+    if not faculty_id:
+        return jsonify({"error": "faculty_id is required in payload"}), 400
+
+    od = ApprovedODRequest.query.get_or_404(od_id)
+    if od.applied:
+        return jsonify({"error": "OD already applied"}), 400
+    print(od.session_id)
+
+    try:
+        # Prefer session-specific update if session_id provided
+        if od.session_id:
+            # Find the attendance record for this (session, student)
+            att = Attendance.query.filter_by(session_id=od.session_id, student_id=od.student_id).first()
+            if att:
+                prev = att.status.value
+                att.status = AttendanceStatus.OD
+                att.marked_by = faculty_id
+                att.marked_at = datetime.now(IST)
+                att.reason = od.reason
+                db.session.add(AttendanceLog(
+                    attendance_id=att.id,
+                    prev_status=prev,
+                    new_status=AttendanceStatus.OD.value,
+                    changed_by=faculty_id,
+                    changed_at=datetime.now(IST),
+                    note="OD applied by faculty"
+                ))
+            else:
+                # create an attendance record with OD
+                new_att = Attendance(
+                    session_id=od.session_id,
+                    student_id=od.student_id,
+                    status=AttendanceStatus.OD,
+                    marked_by=faculty_id,
+                    marked_at=datetime.now(IST),
+                    reason=od.reason
+                )
+                db.session.add(new_att)
+                db.session.flush()
+                db.session.add(AttendanceLog(
+                    attendance_id=new_att.id,
+                    prev_status=None,
+                    new_status=AttendanceStatus.OD.value,
+                    changed_by=faculty_id,
+                    changed_at=datetime.now(IST),
+                    note="OD applied (new record) by faculty"
+                ))
+        else:
+            # No explicit session: find ClassSession(s) for that class on od.date and update student's attendance
+            sessions = ClassSession.query.filter_by(class_id=od.class_id, date=od.date).all()
+            if not sessions:
+                # No session exists (maybe holiday). We'll create a dummy / no-op — but record applied.
+                pass
+            for s in sessions:
+                att = Attendance.query.filter_by(session_id=s.id, student_id=od.student_id).first()
+                if att:
+                    prev = att.status.value
+                    # If already present, keep present. If absent -> set to OD
+                    if prev != AttendanceStatus.PRESENT.value:
+                        att.status = AttendanceStatus.OD
+                        att.marked_by = faculty_id
+                        att.marked_at = datetime.now(IST)
+                        att.reason = od.reason
+                        db.session.add(AttendanceLog(
+                            attendance_id=att.id,
+                            prev_status=prev,
+                            new_status=AttendanceStatus.OD.value,
+                            changed_by=faculty_id,
+                            changed_at=datetime.now(IST),
+                            note="OD applied by faculty"
+                        ))
+                else:
+                    # create attendance record for this session as OD
+                    new_att = Attendance(
+                        session_id=s.id,
+                        student_id=od.student_id,
+                        status=AttendanceStatus.OD,
+                        marked_by=faculty_id,
+                        marked_at=datetime.now(IST),
+                        reason=od.reason
+                    )
+                    db.session.add(new_att)
+                    db.session.flush()
+                    db.session.add(AttendanceLog(
+                        attendance_id=new_att.id,
+                        prev_status=None,
+                        new_status=AttendanceStatus.OD.value,
+                        changed_by=faculty_id,
+                        changed_at=datetime.now(IST),
+                        note="OD applied (new record) by faculty"
+                    ))
+
+        # mark request as applied
+        od.applied = True
+        od.applied_by = faculty_id
+        od.applied_at = datetime.now(IST)
+        db.session.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+
+# Socket.IO event handlers
+@socketio.on('connect')
+def handle_connect():
+    print(f'Client connected: {request.sid}')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f'Client disconnected: {request.sid}')
+
+@socketio.on('join_session')
+def handle_join_session(data):
+    session_id = data['sessionId']
+    join_room(f'session_{session_id}')
+    print(f'Client {request.sid} joined session {session_id}')
+
+@socketio.on('leave_session')
+def handle_leave_session(data):
+    session_id = data['sessionId']
+    leave_room(f'session_{session_id}')
+    print(f'Client {request.sid} left session {session_id}')
+
+if __name__ == "__main__":
+    # socketio.run(app, host="0.0.0.0", port=5000)
+    start_scheduler()
+    socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=False)
+
+
+
+
+#if __name__=="__main__":
+#    app.run(debug=True)
