@@ -22,8 +22,8 @@ export default function Navigation({ currentPage, onPageChange }) {
     });
   }
 
-  // ADMIN/HOD MENU
-  if (user?.role === "ADMIN" || user?.role === "HOD") {
+  // ADMIN MENU
+  if (user?.role === "ADMIN") {
     navigationItems.push({
       id: "odApproval",
       label: "OD Approval",

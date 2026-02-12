@@ -80,6 +80,51 @@ export const odAPI = {
   apply: (odId, payload) => api.put(`/od/apply/${odId}`, payload),
 };
 
+// Add to your api.js file
+
+// Student OD APIs
+export const studentODAPI = {
+  // Submit OD request
+  submitRequest: (data) => api.post('/student/od/submit', data),
+  
+  // Get my requests
+  getMyRequests: (studentId) => 
+    api.get('/student/od/my-requests', { 
+      params: { student_id: studentId } 
+    }),
+  
+  // Cancel request - NOTE: This endpoint doesn't exist in backend yet
+  // Remove this or implement in backend
+  cancelRequest: (requestId, studentId) => 
+    api.put(`/student/od/cancel/${requestId}`, { student_id: studentId }),
+  
+  // Get attendance summary
+  getAttendanceSummary: (studentId) =>
+    api.get('/student/attendance/summary', {
+      params: { student_id: studentId }
+    }),
+  
+  // Get upcoming sessions
+  getUpcomingSessions: (studentId, days = 7) =>
+    api.get('/student/sessions/upcoming', {
+      params: { student_id: studentId, days }
+    })
+};
+
+// Admin OD APIs - Student-initiated OD workflow (Student -> Admin -> Faculty)
+export const adminODAPI = {
+  // Get pending student OD requests for admin to review
+  getPendingRequests: () => api.get('/admin/od/pending-requests'),
+  
+  // Approve a student OD request (creates ApprovedODRequest for faculty to apply)
+  approveRequest: (requestId, data) =>
+    api.post(`/admin/od/approve-request/${requestId}`, data),
+  
+  // Reject a student OD request
+  rejectRequest: (requestId, data) =>
+    api.post(`/admin/od/reject-request/${requestId}`, data),
+};
+
 export default api;
 
 

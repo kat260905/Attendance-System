@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pytz
 from flask import request, jsonify
 import os
-
+from models import StudentODRequest, ODRequestStatus
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -24,8 +24,16 @@ CORS(app)  # Enable CORS for all routes
 
 load_dotenv()
 
-app.config['SQLALCHEMY_DATABASE_URI']=os.getenv('DATABASE_URI')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
+# Database configuration - Supabase/PostgreSQL requires SSL
+_db_uri = os.getenv('DATABASE_URI')
+if _db_uri and 'postgresql' in _db_uri and 'sslmode' not in _db_uri:
+    _db_uri = _db_uri + ('&' if '?' in _db_uri else '?') + 'sslmode=require'
+if not _db_uri:
+    # Fallback to SQLite for local development if no DATABASE_URI set
+    _db_uri = 'sqlite:///attendance.db'
+    print("Note: No DATABASE_URI found. Using SQLite (attendance.db)")
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_uri
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 #db= SQLAlchemy(app)
 db.init_app(app)
@@ -190,27 +198,36 @@ def login():
             
         email = data.get("email")
         password = data.get("password")  # In production, hash and verify password
+        requested_role = data.get("role")  # Validate user logs in with correct role
         
         if not email:
             return jsonify({"error": "Email is required"}), 400
         
-        print(f"Login attempt for email: {email}")  # Debug log
+        print(f"Login attempt for email: {email}, role: {requested_role}")  # Debug log
         
         user = User.query.filter_by(email=email).first()
         if not user:
             print(f"User not found for email: {email}")  # Debug log
-            # Check if any users exist in database
-            total_users = User.query.count()
-            print(f"Total users in database: {total_users}")  # Debug log
             return jsonify({"error": "Invalid credentials"}), 401
+        
+        # Validate that selected role matches user's actual role
+        if requested_role and user.role.value != requested_role:
+            return jsonify({"error": f"Invalid credentials. Please select {user.role.value.replace('_', ' ')} to sign in."}), 401
         
         print(f"User found: {user.name} ({user.role.value})")  # Debug log
         
         faculty_id = None
+        student_id = None
         if user.role == UserRole.FACULTY:
             faculty = Faculty.query.filter_by(user_id=user.id).first()
             if faculty:
                 faculty_id = faculty.id
+        
+        if user.role == UserRole.STUDENT:
+            student = Student.query.filter_by(user_id=user.id).first()
+            if student:
+                student_id = student.id
+
         # In production, verify password hash
         return jsonify({
             "user": {
@@ -219,6 +236,7 @@ def login():
                 "name": user.name,
                 "role": user.role.value,
                 "faculty_id": faculty_id, 
+                "student_id": student_id,
             },
             "message": "Login successful"
         })
@@ -481,6 +499,12 @@ def create_class_session():
 
 @app.route("/api/class-sessions/faculty/<int:faculty_id>", methods=["GET"])
 def get_faculty_sessions(faculty_id):
+    # Show sessions: today_only | week | all
+    # today_only = only today (default in some UIs)
+    # week = past 14 days + next 30 days (good for attendance dropdown)
+    # all = everything
+    mode = request.args.get("mode", "week").lower()
+    today = datetime.now().date()
     # By default, only show today's sessions for attendance marking
     # Use ?all=true to get all sessions (past and future)
     show_all = request.args.get("all", "false").lower() == "true"
@@ -488,13 +512,17 @@ def get_faculty_sessions(faculty_id):
     
     query = ClassSession.query.filter_by(faculty_id=faculty_id)
     
-    if not show_all:
-        # Only show today's sessions
+    if mode == "today":
         query = query.filter(ClassSession.date == today)
+    elif mode == "week":
+        from_date = today - timedelta(days=14)
+        to_date = today + timedelta(days=30)
+        query = query.filter(ClassSession.date >= from_date, ClassSession.date <= to_date)
+    # else mode=="all" - no date filter
     
-    # Order by date descending (most recent first)
+    # Order by date descending (most recent first), then start time
     sessions = query.order_by(ClassSession.date.desc(), ClassSession.start_time.asc()).all()
-    print(f"Faculty {faculty_id} sessions (today_only={not show_all}): {len(sessions)} found")
+    print(f"Faculty {faculty_id} sessions (mode={mode}): {len(sessions)} found")
     
     return jsonify([{
         "id": s.id,
@@ -1408,6 +1436,110 @@ def attendance_photo_upload():
 
 
 
+# ========================================
+# ADMIN: Student OD Request Review (Student -> Admin -> Faculty flow)
+# ========================================
+
+@app.route("/api/admin/od/pending-requests", methods=["GET"])
+def get_admin_pending_od_requests():
+    """
+    Get all pending StudentODRequests for admin to review/approve.
+    Returns student-initiated OD requests with status=PENDING.
+    """
+    pending = StudentODRequest.query.filter_by(status=ODRequestStatus.PENDING).order_by(
+        StudentODRequest.requested_at.asc()
+    ).all()
+    
+    result = []
+    for req in pending:
+        student = req.student
+        class_ref = req.class_ref
+        result.append({
+            "id": req.id,
+            "student_id": req.student_id,
+            "student_name": student.name if student else None,
+            "roll_no": student.roll_no if student else None,
+            "class_id": req.class_id,
+            "class_info": f"{class_ref.department} Yr{class_ref.year} Sec {class_ref.section}" if class_ref else None,
+            "from_date": req.from_date.isoformat(),
+            "to_date": req.to_date.isoformat(),
+            "reason": req.reason,
+            "requested_at": req.requested_at.isoformat() if req.requested_at else None,
+        })
+    return jsonify(result)
+
+
+@app.route("/api/admin/od/approve-request/<int:request_id>", methods=["POST"])
+def admin_approve_student_od_request(request_id):
+    """
+    Admin approves a StudentODRequest. Creates ApprovedODRequest(s) for each date
+    in the range (from_date to to_date), which faculty can then apply to attendance.
+    """
+    data = request.get_json() or {}
+    admin_user_id = data.get("approved_by")
+    if not admin_user_id:
+        return jsonify({"error": "approved_by (admin user id) is required"}), 400
+    
+    req = StudentODRequest.query.get(request_id)
+    if not req:
+        return jsonify({"error": "OD request not found"}), 404
+    if req.status != ODRequestStatus.PENDING:
+        return jsonify({"error": f"Request already {req.status.value}"}), 400
+    
+    try:
+        # Create one ApprovedODRequest per date in the range
+        current_date = req.from_date
+        while current_date <= req.to_date:
+            od = ApprovedODRequest(
+                student_id=req.student_id,
+                class_id=req.class_id,
+                session_id=None,
+                date=current_date,
+                reason=req.reason,
+                approved_by=admin_user_id,
+                approved_at=datetime.now(IST),
+                student_request_id=req.id
+            )
+            db.session.add(od)
+            current_date = current_date + timedelta(days=1)
+        
+        req.status = ODRequestStatus.APPROVED
+        req.reviewed_by = admin_user_id
+        req.reviewed_at = datetime.now(IST)
+        req.admin_remarks = data.get("remarks", "")
+        
+        db.session.commit()
+        return jsonify({"ok": True, "message": "OD request approved. Faculty can now apply to attendance."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/od/reject-request/<int:request_id>", methods=["POST"])
+def admin_reject_student_od_request(request_id):
+    """Admin rejects a StudentODRequest."""
+    data = request.get_json() or {}
+    admin_user_id = data.get("rejected_by")
+    remarks = data.get("remarks", "")
+    
+    req = StudentODRequest.query.get(request_id)
+    if not req:
+        return jsonify({"error": "OD request not found"}), 404
+    if req.status != ODRequestStatus.PENDING:
+        return jsonify({"error": f"Request already {req.status.value}"}), 400
+    
+    try:
+        req.status = ODRequestStatus.REJECTED
+        req.reviewed_by = admin_user_id
+        req.reviewed_at = datetime.now(IST)
+        req.admin_remarks = remarks
+        db.session.commit()
+        return jsonify({"ok": True, "message": "OD request rejected."}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/api/od/approve", methods=["POST"])
 def approve_od():
     """
@@ -1502,21 +1634,22 @@ def get_pending_od():
 def apply_od(od_id):
     """
     Faculty clicks 'Apply' on a pending OD request.
-
-    Payload:
-    {
-      "faculty_id": 2  -- the acting faculty id (to set applied_by)
-    }
+    Payload: { "faculty_id": 2 } - Faculty table id; we use faculty.user_id for marked_by (Attendance expects users.id)
     """
     data = request.get_json() or {}
     faculty_id = data.get("faculty_id")
     if not faculty_id:
         return jsonify({"error": "faculty_id is required in payload"}), 400
 
+    faculty = Faculty.query.get(faculty_id)
+    if not faculty:
+        return jsonify({"error": "Faculty not found"}), 404
+    # Attendance.marked_by and applied_by expect user_id (FK to users), not faculty_id
+    user_id = faculty.user_id
+
     od = ApprovedODRequest.query.get_or_404(od_id)
     if od.applied:
         return jsonify({"error": "OD already applied"}), 400
-    print(od.session_id)
 
     try:
         # Prefer session-specific update if session_id provided
@@ -1526,14 +1659,14 @@ def apply_od(od_id):
             if att:
                 prev = att.status.value
                 att.status = AttendanceStatus.OD
-                att.marked_by = faculty_id
+                att.marked_by = user_id
                 att.marked_at = datetime.now(IST)
                 att.reason = od.reason
                 db.session.add(AttendanceLog(
                     attendance_id=att.id,
                     prev_status=prev,
                     new_status=AttendanceStatus.OD.value,
-                    changed_by=faculty_id,
+                    changed_by=user_id,
                     changed_at=datetime.now(IST),
                     note="OD applied by faculty"
                 ))
@@ -1543,7 +1676,7 @@ def apply_od(od_id):
                     session_id=od.session_id,
                     student_id=od.student_id,
                     status=AttendanceStatus.OD,
-                    marked_by=faculty_id,
+                    marked_by=user_id,
                     marked_at=datetime.now(IST),
                     reason=od.reason
                 )
@@ -1553,7 +1686,7 @@ def apply_od(od_id):
                     attendance_id=new_att.id,
                     prev_status=None,
                     new_status=AttendanceStatus.OD.value,
-                    changed_by=faculty_id,
+                    changed_by=user_id,
                     changed_at=datetime.now(IST),
                     note="OD applied (new record) by faculty"
                 ))
@@ -1570,14 +1703,14 @@ def apply_od(od_id):
                     # If already present, keep present. If absent -> set to OD
                     if prev != AttendanceStatus.PRESENT.value:
                         att.status = AttendanceStatus.OD
-                        att.marked_by = faculty_id
+                        att.marked_by = user_id
                         att.marked_at = datetime.now(IST)
                         att.reason = od.reason
                         db.session.add(AttendanceLog(
                             attendance_id=att.id,
                             prev_status=prev,
                             new_status=AttendanceStatus.OD.value,
-                            changed_by=faculty_id,
+                            changed_by=user_id,
                             changed_at=datetime.now(IST),
                             note="OD applied by faculty"
                         ))
@@ -1587,7 +1720,7 @@ def apply_od(od_id):
                         session_id=s.id,
                         student_id=od.student_id,
                         status=AttendanceStatus.OD,
-                        marked_by=faculty_id,
+                        marked_by=user_id,
                         marked_at=datetime.now(IST),
                         reason=od.reason
                     )
@@ -1597,17 +1730,265 @@ def apply_od(od_id):
                         attendance_id=new_att.id,
                         prev_status=None,
                         new_status=AttendanceStatus.OD.value,
-                        changed_by=faculty_id,
+                        changed_by=user_id,
                         changed_at=datetime.now(IST),
                         note="OD applied (new record) by faculty"
                     ))
 
         # mark request as applied
         od.applied = True
-        od.applied_by = faculty_id
+        od.applied_by = user_id
         od.applied_at = datetime.now(IST)
         db.session.commit()
         return jsonify({"ok": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400# ========================================
+# STUDENT-SPECIFIC ENDPOINTS
+# ========================================
+
+@app.route("/api/student/attendance/summary", methods=["GET"])
+def get_student_attendance_summary():
+    """
+    Get attendance summary for a student
+    Query params: student_id (required)
+    Returns: overall attendance percentage, present/absent/od counts
+    """
+    student_id = request.args.get("student_id", type=int)
+    
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    
+    # Get student info
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
+    
+    # Get all attendance records for this student
+    attendance_records = Attendance.query.filter_by(student_id=student_id).all()
+    
+    total = len(attendance_records)
+    present = sum(1 for a in attendance_records if a.status == AttendanceStatus.PRESENT)
+    absent = sum(1 for a in attendance_records if a.status == AttendanceStatus.ABSENT)
+    od = sum(1 for a in attendance_records if a.status == AttendanceStatus.OD)
+    
+    # Calculate percentage (present + od counted as present)
+    percentage = round(((present + od) / total * 100), 2) if total > 0 else 0
+    
+    # Get subject-wise breakdown
+    subject_attendance = {}
+    for record in attendance_records:
+        subject_id = record.session.subject_id
+        subject_name = record.session.subject.name
+        
+        if subject_id not in subject_attendance:
+            subject_attendance[subject_id] = {
+                "subject_id": subject_id,
+                "subject_name": subject_name,
+                "total": 0,
+                "present": 0,
+                "absent": 0,
+                "od": 0
+            }
+        
+        subject_attendance[subject_id]["total"] += 1
+        if record.status == AttendanceStatus.PRESENT:
+            subject_attendance[subject_id]["present"] += 1
+        elif record.status == AttendanceStatus.ABSENT:
+            subject_attendance[subject_id]["absent"] += 1
+        elif record.status == AttendanceStatus.OD:
+            subject_attendance[subject_id]["od"] += 1
+    
+    # Calculate percentage for each subject
+    for subject_id in subject_attendance:
+        s = subject_attendance[subject_id]
+        s["percentage"] = round(((s["present"] + s["od"]) / s["total"] * 100), 2) if s["total"] > 0 else 0
+    
+    return jsonify({
+        "student_id": student_id,
+        "student_name": student.name,
+        "roll_no": student.roll_no,
+        "overall": {
+            "total": total,
+            "present": present,
+            "absent": absent,
+            "od": od,
+            "percentage": percentage
+        },
+        "by_subject": list(subject_attendance.values())
+    })
+
+
+@app.route("/api/student/sessions/upcoming", methods=["GET"])
+def get_student_upcoming_sessions():
+    """
+    Get upcoming class sessions for a student
+    Query params: student_id (required), days (optional, default 7)
+    """
+    student_id = request.args.get("student_id", type=int)
+    days = request.args.get("days", type=int, default=7)
+    
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    
+    # Get student's class
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
+    
+    class_id = student.class_id
+    if not class_id:
+        return jsonify([])
+    
+    # Get upcoming sessions for this class
+    today = datetime.now(IST).date()
+    end_date = today + timedelta(days=days)
+    
+    sessions = ClassSession.query.filter(
+        ClassSession.class_id == class_id,
+        ClassSession.date >= today,
+        ClassSession.date <= end_date
+    ).order_by(ClassSession.date.asc(), ClassSession.start_time.asc()).all()
+    
+    result = []
+    for s in sessions:
+        # Check if attendance already marked
+        attendance = Attendance.query.filter_by(
+            session_id=s.id,
+            student_id=student_id
+        ).first()
+        
+        result.append({
+            "session_id": s.id,
+            "subject_id": s.subject_id,
+            "subject_name": s.subject.name,
+            "faculty_name": s.faculty.user.name,
+            "date": s.date.isoformat(),
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None,
+            "topic": s.topic,
+            "attendance_status": attendance.status.value if attendance else None
+        })
+    
+    return jsonify(result)
+
+
+@app.route("/api/student/od/my-requests", methods=["GET"])
+def get_student_od_requests():
+    """
+    Get all OD requests submitted by a student
+    Query params: student_id (required)
+    """
+    student_id = request.args.get("student_id", type=int)
+    
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    
+    # Get all OD requests for this student from StudentODRequest table
+    od_requests = StudentODRequest.query.filter_by(student_id=student_id).order_by(
+        StudentODRequest.requested_at.desc()
+    ).all()
+    
+    result = []
+    for req in od_requests:
+        result.append({
+            "id": req.id,
+            "student_id": req.student_id,
+            "date": req.from_date.isoformat(),
+            "from_date": req.from_date.isoformat(),
+            "to_date": req.to_date.isoformat(),
+            "reason": req.reason,
+            "status": req.status.value,
+            "created_at": req.requested_at.isoformat() if req.requested_at else None,
+            "reviewed_by": req.reviewed_by,
+            "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+            "admin_notes": req.admin_remarks
+        })
+    
+    return jsonify(result)
+
+
+@app.route("/api/student/od/submit", methods=["POST"])
+def submit_student_od_request():
+    """
+    Submit a new OD request
+    Payload:
+    {
+      "student_id": 12,
+      "from_date": "2025-02-15",
+      "to_date": "2025-02-16",   // optional, defaults to from_date
+      "reason": "Sports meet"
+    }
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    student_id = data.get("student_id")
+    from_date_str = data.get("from_date") or data.get("date")
+    to_date_str = data.get("to_date") or from_date_str
+    reason = data.get("reason")
+    
+    if not (student_id and from_date_str and reason):
+        return jsonify({"error": "student_id, from_date, and reason are required"}), 400
+    
+    try:
+        from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+        to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "Dates must be YYYY-MM-DD"}), 400
+    
+    if to_date < from_date:
+        return jsonify({"error": "to_date cannot be before from_date"}), 400
+    
+    # Get student's class_id (required for StudentODRequest)
+    student = Student.query.get(student_id)
+    if not student or not student.class_id:
+        return jsonify({"error": "Student or class not found"}), 400
+    
+    try:
+        od_request = StudentODRequest(
+            student_id=student_id,
+            class_id=student.class_id,
+            from_date=from_date,
+            to_date=to_date,
+            reason=reason,
+            status=ODRequestStatus.PENDING
+        )
+        db.session.add(od_request)
+        db.session.commit()
+        
+        return jsonify({
+            "ok": True,
+            "request_id": od_request.id,
+            "message": "OD request submitted successfully"
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/student/od/cancel/<int:request_id>", methods=["PUT"])
+def cancel_student_od_request(request_id):
+    """Student cancels their own PENDING OD request."""
+    data = request.get_json() or {}
+    student_id = data.get("student_id")
+    if not student_id:
+        return jsonify({"error": "student_id is required"}), 400
+    
+    req = StudentODRequest.query.get(request_id)
+    if not req:
+        return jsonify({"error": "OD request not found"}), 404
+    if req.student_id != int(student_id):
+        return jsonify({"error": "Not authorized to cancel this request"}), 403
+    if req.status != ODRequestStatus.PENDING:
+        return jsonify({"error": f"Cannot cancel - request already {req.status.value}"}), 400
+    
+    try:
+        req.status = ODRequestStatus.CANCELLED
+        db.session.commit()
+        return jsonify({"ok": True, "message": "OD request cancelled"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
