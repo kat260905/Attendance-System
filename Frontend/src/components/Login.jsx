@@ -46,12 +46,12 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="bg-indigo-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
+          {/* <div className="bg-indigo-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
             <User className="w-10 h-10 text-indigo-600" />
-          </div>
+          </div> */}
           <h1 className="text-2xl font-bold text-gray-800">
             {isLogin ? 'Welcome Back' : 'Create Account'}
           </h1>
@@ -115,7 +115,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-blue-800 text-white py-3 px-4 rounded-lg font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
           </button>
@@ -128,20 +128,20 @@ export default function Login() {
               setIsLogin(!isLogin);
               setError(null);
             }}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
+            className="text-blue-700 hover:text-blue-800 font-medium"
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
         </div>
 
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+        {/* <div className="mt-8 p-4 bg-gray-50 rounded-lg">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
           <div className="text-xs text-gray-600 space-y-1">
             <p><strong>Admin:</strong> admin@college.edu</p>
             <p><strong>Faculty:</strong> john.doe@college.edu</p>
             <p><strong>Password:</strong> (any password works in demo)</p>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );

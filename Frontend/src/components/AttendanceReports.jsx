@@ -139,11 +139,12 @@ export default function AttendanceReports() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="mb-6 pb-6 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <BarChart3 className="text-indigo-600" />
+          <BarChart3 className="text-blue-900" />
           Attendance Reports & Analytics
         </h2>
         <p className="text-gray-600 mt-2">
@@ -155,7 +156,7 @@ export default function AttendanceReports() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="mb-6 pb-6 border-b border-gray-200">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Report Filters</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           
@@ -166,7 +167,7 @@ export default function AttendanceReports() {
               <select
                 value={filters.class_id}
                 onChange={(e) => handleFilterChange('class_id', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
               >
                 <option value="">All Classes</option>
                 {classes.map(cls => (
@@ -183,7 +184,7 @@ export default function AttendanceReports() {
             <select
               value={filters.student_id}
               onChange={(e) => handleFilterChange('student_id', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
             >
               <option value="">All Students</option>
               {students.map(student => (
@@ -201,7 +202,7 @@ export default function AttendanceReports() {
             <select
               value={filters.department}
               onChange={(e) => handleFilterChange('department', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
             >
               <option value="">All Departments</option>
               <option value="IT">IT</option>
@@ -220,7 +221,7 @@ export default function AttendanceReports() {
               type="date"
               value={filters.from_date}
               onChange={(e) => handleFilterChange('from_date', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
             />
           </div>
 
@@ -230,7 +231,7 @@ export default function AttendanceReports() {
               type="date"
               value={filters.to_date}
               onChange={(e) => handleFilterChange('to_date', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
             />
           </div>
 
@@ -238,7 +239,7 @@ export default function AttendanceReports() {
             <button
               onClick={generateReport}
               disabled={loading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors flex items-center gap-2 disabled:opacity-50"
             >
               <BarChart3 size={18} />
               {loading ? 'Generating...' : 'Generate Report'}
@@ -256,8 +257,8 @@ export default function AttendanceReports() {
 
       {/* Summary Cards */}
       {reports.summary.total_records > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 pb-6 border-b border-gray-200">
+          <div className="bg-blue-50 rounded-lg p-6">
             <div className="flex items-center gap-3">
               <div className="bg-blue-100 rounded-full p-3">
                 <FileText className="text-blue-600" size={24} />
@@ -269,7 +270,7 @@ export default function AttendanceReports() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="bg-green-50 rounded-lg p-6">
             <div className="flex items-center gap-3">
               <div className="bg-green-100 rounded-full p-3">
                 <Users className="text-green-600" size={24} />
@@ -281,7 +282,7 @@ export default function AttendanceReports() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="bg-red-50 rounded-lg p-6">
             <div className="flex items-center gap-3">
               <div className="bg-red-100 rounded-full p-3">
                 <Users className="text-red-600" size={24} />
@@ -293,14 +294,14 @@ export default function AttendanceReports() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="bg-blue-50 rounded-lg p-6">
             <div className="flex items-center gap-3">
-              <div className="bg-indigo-100 rounded-full p-3">
-                <TrendingUp className="text-indigo-600" size={24} />
+              <div className="bg-blue-100 rounded-full p-3">
+                <TrendingUp className="text-blue-900" size={24} />
               </div>
               <div>
                 <div className="text-sm text-gray-600">Overall Attendance %</div>
-                <div className="text-2xl font-bold text-indigo-600">{getAttendancePercentage()}%</div>
+                <div className="text-2xl font-bold text-blue-900">{getAttendancePercentage()}%</div>
               </div>
             </div>
           </div>
@@ -309,7 +310,7 @@ export default function AttendanceReports() {
 
       {/* Student-wise Attendance Report */}
       {reports.student_reports.length > 0 && (
-        <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Student-wise Attendance Report</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -348,12 +349,13 @@ export default function AttendanceReports() {
 
       {/* No Data Message */}
       {!reports.summary.total_records && (
-        <div className="bg-white rounded-lg shadow-lg p-12 text-center">
+        <div className="p-12 text-center">
           <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-600 mb-2">No Data Available</h3>
           <p className="text-gray-500">Click "Generate Report" to view attendance analytics.</p>
         </div>
       )}
+      </div>
     </div>
   );
 }

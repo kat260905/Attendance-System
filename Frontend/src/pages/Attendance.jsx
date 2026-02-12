@@ -63,7 +63,13 @@ export default function AttendancePage() {
       const todaySession = sessionsRes.data.find(s => s.date === today);
       if (todaySession) {
         setSelectedSession(todaySession);
+        
+        // Load students for the session
+        const studentsRes = await studentAPI.getBySession(todaySession.id);
+        setStudents(studentsRes.data);
+        
         loadSessionAttendance(todaySession.id);
+        socketService.joinSession(todaySession.id);
       }
     } catch (error) {
       console.error('Failed to load initial data:', error);
@@ -264,9 +270,9 @@ export default function AttendancePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading attendance system...</p>
         </div>
       </div>
@@ -274,34 +280,34 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="mb-6 pb-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
-                <Users className="text-indigo-600" />
+                {/* <Users className="text-blue-900" /> */}
                 Attendance Register
               </h1>
               <p className="text-gray-600 mt-1">{currentDate}</p>
               {user && (
-                <p className="text-sm text-indigo-600 mt-1">
+                <p className="text-sm text-blue-900 mt-1">
                   Welcome, {user.name} ({user.role})
                 </p>
               )}
             </div>
             <div className="text-right">
               <div className="text-sm text-gray-600">Total Students</div>
-              <div className="text-2xl font-bold text-indigo-600">{students.length}</div>
+              <div className="text-2xl font-bold text-blue-900">{students.length}</div>
             </div>
           </div>
         </div>
 
         {/* Session Selection */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="mb-6 pb-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Calendar className="text-indigo-600" />
+            <Calendar className="text-blue-900" />
             Select Class Session
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -312,7 +318,7 @@ export default function AttendancePage() {
               <select
                 value={selectedSession?.id || ''}
                 onChange={(e) => handleSessionChange(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
               >
                 <option value="">Select a session...</option>
                 {sessions.map(session => (
@@ -355,7 +361,7 @@ export default function AttendancePage() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-6 pb-6 border-b border-gray-200">
           <div className="bg-gray-50 border-2 border-green-200 rounded-lg p-4">
             <div className="flex items-center gap-3">
               <div className="bg-gray-500 rounded-full p-2">
@@ -381,9 +387,9 @@ export default function AttendancePage() {
         </div>
 
         {/* Quick Mark by Register Number Suffix */}
-        <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+        <div className="mb-6 pb-6 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <Hash className="text-indigo-600" size={20} />
+            <Hash className="text-blue-900" size={20} />
             Quick Mark by Register Number
           </h2>
           <p className="text-sm text-gray-600 mb-3">
@@ -399,7 +405,7 @@ export default function AttendancePage() {
                 value={suffixInput}
                 onChange={(e) => setSuffixInput(e.target.value)}
                 placeholder="e.g., 135, 042, 7, 89"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
                 disabled={!selectedSession}
               />
             </div>
@@ -410,7 +416,7 @@ export default function AttendancePage() {
               <select
                 value={suffixMode}
                 onChange={(e) => setSuffixMode(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
                 disabled={!selectedSession}
               >
                 <option value="absent">Absent</option>
@@ -422,8 +428,8 @@ export default function AttendancePage() {
               disabled={!selectedSession || suffixLoading || !suffixInput.trim()}
               className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                 suffixMode === 'present' 
-                  ? 'bg-green-500 text-white hover:bg-green-600' 
-                  : 'bg-red-500 text-white hover:bg-red-600'
+                  ? 'bg-green-400 text-white hover:bg-green-500' 
+                  : 'bg-red-400 text-white hover:bg-red-500'
               }`}
             >
               {suffixLoading ? (
@@ -465,7 +471,7 @@ export default function AttendancePage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+        <div className="mb-6 pb-6 border-b border-gray-200">
           <div className="flex flex-wrap gap-3 justify-between items-center">
             <div className="flex gap-3">
               <button
@@ -501,7 +507,7 @@ export default function AttendancePage() {
                 {submitting ? 'Submitting...' : 'Submit Attendance'}
               </button>
 
-              <button
+              {/* <button
                 onClick={() => setShowPhotoModal(true)}
                 className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center gap-2"
               >
@@ -516,14 +522,14 @@ export default function AttendancePage() {
                 onClose={() => setShowPhotoModal(false)}
                 onApply={() => loadSessionAttendance(selectedSession.id)}
               />
-            )}
+            )} */}
             </div>
           </div>
         </div>
 
         {/* Attendance Table */}
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <table className="w-full">
+        <div className="overflow-hidden">
+          <table className="w-full border border-gray-200 rounded-lg">
             <thead className="bg-blue-900 text-white">
               <tr>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Roll No</th>
@@ -555,7 +561,7 @@ export default function AttendancePage() {
                       type="checkbox"
                       checked={attendance[student.id] || false}
                       onChange={() => handleAttendanceChange(student.id)}
-                      className="w-5 h-5 text-indigo-600 rounded checked:bg-green-600 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      className="w-5 h-5 text-blue-900 rounded checked:bg-green-600 focus:ring-2 focus:ring-blue-900 cursor-pointer"
                     />
                   </td>
                   <td className="px-6 py-4 text-center">
@@ -577,7 +583,7 @@ export default function AttendancePage() {
 
         {/* Submit Button */}
         {/* <div className="mt-6 flex justify-end">
-          <button className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-lg">
+          <button className="px-8 py-3 bg-blue-900 text-white font-semibold rounded-lg hover:bg-blue-800 transition-colors shadow-lg">
             Submit Attendance
           </button>
         </div>*/}

@@ -58,7 +58,7 @@ export default function Navigation({ currentPage, onPageChange }) {
                     onClick={() => onPageChange(item.id)}
                     className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors ${
                       currentPage === item.id
-                        ? 'border-indigo-500 text-gray-900'
+                        ? 'border-blue-800 text-gray-900'
                         : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                     }`}
                   >
@@ -116,7 +116,7 @@ export default function Navigation({ currentPage, onPageChange }) {
                   }}
                   className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors ${
                     currentPage === item.id
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                      ? 'bg-blue-50 border-blue-500 text-blue-700'
                       : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
                   }`}
                 >
@@ -133,8 +133,8 @@ export default function Navigation({ currentPage, onPageChange }) {
           <div className="pt-4 pb-3 border-t border-gray-200">
             <div className="flex items-center px-4">
               <div className="flex-shrink-0">
-                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                  <span className="text-sm font-medium text-indigo-600">
+                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-sm font-medium text-blue-600">
                     {user?.name?.charAt(0).toUpperCase()}
                   </span>
                 </div>
