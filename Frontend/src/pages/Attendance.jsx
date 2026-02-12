@@ -36,7 +36,6 @@ export default function AttendancePage() {
     setupSocketListeners();
     
     return () => {
-      // Cleanup socket listeners
       socketService.offAttendanceMarked();
       socketService.offAttendanceUpdated();
     };
@@ -46,12 +45,13 @@ export default function AttendancePage() {
     try {
      
       setLoading(true);
+      // Faculty: fetch sessions for their classes. Admin: fetch all sessions.
+      const sessionsPromise = user?.faculty_id
+        ? classSessionAPI.getByFaculty(user.faculty_id)
+        : classSessionAPI.getAll();
       const [subjectsRes, sessionsRes] = await Promise.all([
-        //studentAPI.getAll(),
         subjectAPI.getAll(),
-        //classSessionAPI.getAll()
-        //console.log("FACULTY ID:", user.faculty_id),
-        classSessionAPI.getByFaculty(user.faculty_id)
+        sessionsPromise
       ]);
       
       //setStudents(studentsRes.data);

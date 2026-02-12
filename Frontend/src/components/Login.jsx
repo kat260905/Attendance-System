@@ -1,12 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, Shield, GraduationCap, UserCog } from 'lucide-react';
+
+const ROLE_OPTIONS = [
+  { value: 'ADMIN', label: 'Admin', icon: Shield, color: 'indigo', desc: 'Manage system & approvals' },
+  { value: 'FACULTY', label: 'Faculty', icon: UserCog, color: 'emerald', desc: 'Mark attendance & reports' },
+  { value: 'STUDENT', label: 'Student', icon: GraduationCap, color: 'amber', desc: 'View attendance & OD' },
+];
 
 export default function Login() {
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    password: '',
+    role: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
@@ -21,43 +28,70 @@ export default function Login() {
     if (error) setError(null);
   };
 
+  const selectRole = (role) => {
+    setFormData({ ...formData, role });
+    if (error) setError(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.role) {
+      setError('Please select your role (Admin, Faculty, or Student)');
+      return;
+    }
     
     if (isLogin) {
       const result = await login(formData);
       if (result.success) {
-        // Login successful - manually redirect to dashboard
-        console.log('Login successful, redirecting to dashboard');
         navigate('/', { replace: true });
       }
     } else {
       const result = await register({
         ...formData,
-        name: formData.email.split('@')[0], // Simple name generation
-        role: 'FACULTY' // Default role for demo
+        name: formData.email.split('@')[0],
+        role: formData.role
       });
       if (result.success) {
-        // Registration successful - manually redirect to dashboard
-        console.log('Registration successful, redirecting to dashboard');
         navigate('/', { replace: true });
       }
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 w-full max-w-lg">
         <div className="text-center mb-8">
-          <div className="bg-indigo-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
-            <User className="w-10 h-10 text-indigo-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
+          <h1 className="text-2xl font-bold text-gray-900">
+            Attendance Management System
           </h1>
-          <p className="text-gray-600 mt-2">
-            {isLogin ? 'Sign in to your account' : 'Join the attendance system'}
+          <p className="text-gray-600 mt-1">
+            {isLogin ? 'Sign in to continue' : 'Create your account'}
           </p>
+        </div>
+
+        {/* User Type Selection - Prominent Cards */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-3">I am a</label>
+          <div className="grid grid-cols-3 gap-3">
+            {ROLE_OPTIONS.map(({ value, label, icon: Icon, color, desc }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => selectRole(value)}
+                className={`flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 ${
+                  formData.role === value
+                    ? 'border-indigo-500 bg-indigo-50 shadow-md'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className={`w-8 h-8 mb-2 ${formData.role === value ? 'text-indigo-600' : 'text-gray-500'}`} />
+                <span className={`font-medium text-sm ${formData.role === value ? 'text-indigo-700' : 'text-gray-700'}`}>
+                  {label}
+                </span>
+                <span className="text-xs text-gray-500 mt-0.5 hidden sm:block">{desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -66,11 +100,9 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">Email</label>
             <div className="relative">
               <input
                 type="email"
@@ -79,17 +111,15 @@ export default function Login() {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pl-12"
-                placeholder="Enter your email"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pl-11"
+                placeholder="your@email.college.edu"
               />
-              <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
             </div>
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">Password</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -98,14 +128,14 @@ export default function Login() {
                 value={formData.password}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pl-12 pr-12"
-                placeholder="Enter your password"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent pl-11 pr-11"
+                placeholder="••••••••"
               />
-              <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
@@ -124,27 +154,32 @@ export default function Login() {
         <div className="mt-6 text-center">
           <button
             type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError(null);
-            }}
-            className="text-indigo-600 hover:text-indigo-700 font-medium"
+            onClick={() => { setIsLogin(!isLogin); setError(null); }}
+            className="text-indigo-600 hover:text-indigo-700 font-medium text-sm"
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
         </div>
 
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
-          <div className="text-xs text-gray-600 space-y-1">
-            <p><strong>Admin:</strong> admin@college.edu</p>
-            <p><strong>Faculty:</strong> john.doe@college.edu</p>
-            <p><strong>Password:</strong> (any password works in demo)</p>
+        <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Demo Credentials</h3>
+          <div className="space-y-2 text-sm text-gray-600">
+            <div className="flex justify-between items-center">
+              <span className="font-medium text-gray-700">Admin</span>
+              <span>admin@college.edu</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="font-medium text-gray-700">Faculty</span>
+              <span>john.doe@college.edu</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="font-medium text-gray-700">Student</span>
+              <span>student@college.edu</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Password: any (demo mode)</p>
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-

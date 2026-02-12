@@ -1,21 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import Dashboard from './pages/Dashboard';
+import StudentDashboard from './components/StudentDashboard';
 import './App.css';
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading, user } = useAuth();
-  
-  console.log('ProtectedRoute - loading:', loading); // Debug log
-  console.log('ProtectedRoute - user:', user); // Debug log
-  console.log('ProtectedRoute - isAuthenticated():', isAuthenticated()); // Debug log
-  
-  // Force re-render when user state changes
-  useEffect(() => {
-    console.log('ProtectedRoute - User state changed:', user);
-  }, [user]);
+  const { isAuthenticated, loading } = useAuth();
   
   if (loading) {
     return (
@@ -38,21 +29,28 @@ function ProtectedRoute({ children }) {
 function AppRoutes() {
   const { user, isAuthenticated } = useAuth();
   
-  console.log('AppRoutes - user:', user); // Debug log
-  console.log('AppRoutes - isAuthenticated:', isAuthenticated()); // Debug log
-  
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route 
+        path="/login" 
+        element={isAuthenticated() ? <Navigate to="/" replace /> : <Login />} 
+      />
       <Route 
         path="/" 
         element={
           <ProtectedRoute>
-            <Dashboard />
+            {user?.role === 'STUDENT' ? (
+              <StudentDashboard 
+                studentId={user?.student_id || user?.id} 
+                socket={null}  // We'll add socket later
+              />
+            ) : (
+              <Dashboard />
+            )}
           </ProtectedRoute>
         } 
       />
-      <Route path="*" element={<Navigate to="/" />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
