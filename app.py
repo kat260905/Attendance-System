@@ -54,10 +54,20 @@ def generate_weekly_sessions():
 
     with app.app_context():   
         today = datetime.now(IST).date()
-        #monday = today - timedelta(days=today.weekday())  # This week's Monday
-        monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+        
+        # Get this week's Monday
+        this_monday = today - timedelta(days=today.weekday())
+        
+        # If it's Friday (4), Saturday (5), or Sunday (6), generate for NEXT week
+        # Otherwise, generate for THIS week (to include remaining days like Thursday if today is Wednesday)
+        if today.weekday() >= 4:
+            monday = this_monday + timedelta(days=7)
+        else:
+            monday = this_monday
 
-        print("Weekly Session Generator Running at:", datetime.now(IST))
+        print(f"Weekly Session Generator Running at: {datetime.now(IST)}")
+        print(f"Today: {today} ({['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][today.weekday()]})")
+        print(f"Generating sessions for week starting: {monday}")
 
         timetables = Timetable.query.all()
 
@@ -116,9 +126,9 @@ def start_scheduler():
     scheduler.add_job(
         generate_weekly_sessions,
         trigger="cron",
-        day_of_week="sun",
-        hour=10,
-        minute=21,
+        day_of_week="thu",
+        hour=13,
+        minute=29,
     )
 
     scheduler.start()
@@ -495,6 +505,10 @@ def get_faculty_sessions(faculty_id):
     # all = everything
     mode = request.args.get("mode", "week").lower()
     today = datetime.now().date()
+    # By default, only show today's sessions for attendance marking
+    # Use ?all=true to get all sessions (past and future)
+    show_all = request.args.get("all", "false").lower() == "true"
+    today = datetime.now(IST).date()
     
     query = ClassSession.query.filter_by(faculty_id=faculty_id)
     

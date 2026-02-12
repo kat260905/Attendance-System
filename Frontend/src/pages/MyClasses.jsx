@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { classSessionAPI, facultyAPI, attendanceAPI, studentAPI } from "../services/api";
-import { Calendar, Users, Check, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Calendar, Users, Check, X, ChevronDown, ChevronRight, Hash } from "lucide-react";
 
 export default function MyClassesPage() {
   const { user } = useAuth();
@@ -14,6 +14,10 @@ export default function MyClassesPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [expandedDates, setExpandedDates] = useState({});
+  const [suffixInput, setSuffixInput] = useState('');
+  const [suffixMode, setSuffixMode] = useState('absent');
+  const [suffixLoading, setSuffixLoading] = useState(false);
+  const [suffixResult, setSuffixResult] = useState(null);
 
   // Group sessions by date
   const sessionsByDate = useMemo(() => {
@@ -137,6 +141,60 @@ export default function MyClassesPage() {
     }
   };
 
+  const handleSuffixMark = async () => {
+    if (!selectedSession) {
+      setMessage({ type: "error", text: 'Please select a class session first.' });
+      return;
+    }
+
+    if (!suffixInput.trim()) {
+      setMessage({ type: "error", text: 'Please enter at least one register number suffix.' });
+      return;
+    }
+
+    try {
+      setSuffixLoading(true);
+      setMessage(null);
+      setSuffixResult(null);
+
+      const response = await attendanceAPI.markBySuffix({
+        session_id: selectedSession.id,
+        suffixes: suffixInput,
+        status: suffixMode,
+        marked_by: user.id
+      });
+
+      const { marked, not_found, message: responseMsg } = response.data;
+
+      // Update local attendance state
+      const newAttendance = { ...attendance };
+      marked.forEach(record => {
+        newAttendance[record.student_id] = suffixMode === 'present';
+      });
+      setAttendance(newAttendance);
+
+      setSuffixResult({
+        marked: marked,
+        notFound: not_found,
+        message: responseMsg
+      });
+
+      if (not_found.length > 0) {
+        setMessage({ type: "error", text: `Could not find students with suffixes: ${not_found.join(', ')}` });
+      } else {
+        setMessage({ type: "success", text: responseMsg });
+        setTimeout(() => setMessage(null), 3000);
+      }
+
+      setSuffixInput('');
+    } catch (error) {
+      console.error('Failed to mark attendance by suffix:', error);
+      setMessage({ type: "error", text: 'Failed to mark attendance. Please try again.' });
+    } finally {
+      setSuffixLoading(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">My Classes</h1>
@@ -149,12 +207,8 @@ export default function MyClassesPage() {
             <button
               key={c.class_id}
               onClick={() => handleClassSelect(c.class_id)}
-            //   className={`p-4 rounded-lg shadow border ${selectedClass === c.class_id ? "bg-indigo-200" : "bg-white"}`}
-            // className={`${selectedClass === c.class_id ? "bg-indigo-200" : "bg-white"} 
-            //   p-4 rounded-lg shadow border`}
-
-            className={`${selectedClass === c.class_id ? "bg-indigo-200" : "bg-white"} 
-              p-4 rounded-lg shadow border`}
+            className={`${selectedClass === c.class_id ? "bg-blue-100" : "bg-white"} 
+              p-4 rounded-lg shadow border hover:bg-blue-50 transition-colors`}
             
             >
             
@@ -185,7 +239,7 @@ export default function MyClassesPage() {
                     className="w-full flex items-center justify-between p-3 bg-gray-100 hover:bg-gray-200 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <Calendar size={18} className="text-indigo-600" />
+                      <Calendar size={18} className="text-blue-800" />
                       <span className="font-medium text-gray-800">{formatDate(date)}</span>
                       <span className="text-sm text-gray-500">({dateSessions.length} session{dateSessions.length > 1 ? 's' : ''})</span>
                     </div>
@@ -204,7 +258,7 @@ export default function MyClassesPage() {
                           key={s.id}
                           onClick={() => handleSessionSelect(s)}
                           className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${
-                            selectedSession?.id === s.id ? "bg-indigo-50 border-l-4 border-indigo-500" : ""
+                            selectedSession?.id === s.id ? "bg-blue-50 border-l-4 border-blue-900" : ""
                           }`}
                         >
                           <div className="flex items-center justify-between">
@@ -218,7 +272,7 @@ export default function MyClassesPage() {
                               )}
                             </div>
                             {selectedSession?.id === s.id && (
-                              <Check size={20} className="text-indigo-600" />
+                              <Check size={20} className="text-blue-900" />
                             )}
                           </div>
                         </button>
@@ -242,6 +296,83 @@ export default function MyClassesPage() {
               {message.text}
             </div>
           )}
+
+          {/* Quick Mark by Register Number Suffix */}
+          <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Hash className="text-blue-900" size={20} />
+              Quick Mark by Register Number
+            </h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Enter the last 3 digits of register numbers (e.g., 135 or 30 for 030). Separate multiple entries with commas or spaces.
+            </p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Register Number Suffixes
+                </label>
+                <input
+                  type="text"
+                  value={suffixInput}
+                  onChange={(e) => setSuffixInput(e.target.value)}
+                  placeholder="e.g., 135, 042, 7, 89"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
+                  disabled={!selectedSession}
+                />
+              </div>
+              <div className="min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mark as
+                </label>
+                <select
+                  value={suffixMode}
+                  onChange={(e) => setSuffixMode(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
+                  disabled={!selectedSession}
+                >
+                  <option value="absent">Absent</option>
+                  <option value="present">Present</option>
+                </select>
+              </div>
+              <button
+                onClick={handleSuffixMark}
+                disabled={!selectedSession || suffixLoading || !suffixInput.trim()}
+                className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  suffixMode === 'present' 
+                    ? 'bg-green-500 text-white hover:bg-green-600' 
+                    : 'bg-red-500 text-white hover:bg-red-600'
+                }`}
+              >
+                {suffixLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Marking...
+                  </>
+                ) : (
+                  <>
+                    {suffixMode === 'present' ? <Check size={18} /> : <X size={18} />}
+                    Mark {suffixMode === 'present' ? 'Present' : 'Absent'}
+                  </>
+                )}
+              </button>
+            </div>
+            
+            {/* Show result of suffix marking */}
+            {suffixResult && suffixResult.marked.length > 0 && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  Marked {suffixResult.marked.length} student(s) as {suffixMode}:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {suffixResult.marked.map((s, idx) => (
+                    <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                      {s.roll_no} - {s.student_name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <table className="w-full bg-white shadow rounded">
             <thead className="bg-blue-900 text-white">
