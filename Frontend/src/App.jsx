@@ -2,12 +2,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import Dashboard from './pages/Dashboard';
-import StudentDashboard from './components/StudentDashboard';
 import './App.css';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
-  
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -18,7 +17,7 @@ function ProtectedRoute({ children }) {
       </div>
     );
   }
-  
+
   if (isAuthenticated()) {
     return children;
   } else {
@@ -28,27 +27,20 @@ function ProtectedRoute({ children }) {
 
 function AppRoutes() {
   const { user, isAuthenticated } = useAuth();
-  
+
   return (
     <Routes>
-      <Route 
-        path="/login" 
-        element={isAuthenticated() ? <Navigate to="/" replace /> : <Login />} 
+      <Route
+        path="/login"
+        element={isAuthenticated() ? <Navigate to="/" replace /> : <Login />}
       />
-      <Route 
-        path="/" 
+      <Route
+        path="/"
         element={
           <ProtectedRoute>
-            {user?.role === 'STUDENT' ? (
-              <StudentDashboard 
-                studentId={user?.student_id || user?.id} 
-                socket={null}  // We'll add socket later
-              />
-            ) : (
-              <Dashboard />
-            )}
+            <Dashboard />
           </ProtectedRoute>
-        } 
+        }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

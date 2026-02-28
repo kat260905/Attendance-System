@@ -33,7 +33,8 @@ const StudentDashboard = ({ studentId, socket }) => {
   const [odForm, setODForm] = useState({
     from_date: '',
     to_date: '',
-    reason: ''
+    reason: '',
+    supporting_document: null
   });
 
   useEffect(() => {
@@ -67,6 +68,8 @@ const StudentDashboard = ({ studentId, socket }) => {
       setAttendanceSummary(summaryRes.data.overall ? { ...summaryRes.data.overall } : summaryRes.data);
       setODRequests(requestsRes.data);
       setUpcomingSessions(sessionsRes.data);
+      
+
     } catch (err) {
       setError('Failed to load dashboard data: ' + err.message);
     } finally {
@@ -95,16 +98,28 @@ const StudentDashboard = ({ studentId, socket }) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const response = await studentODAPI.submitRequest({
-        student_id: studentId,
-        from_date: odForm.from_date,
-        to_date: odForm.to_date,
-        reason: odForm.reason
-      });
+
+      let payload;
+      if (odForm.supporting_document) {
+        const formData = new FormData();
+        formData.append('student_id', studentId);
+        formData.append('from_date', odForm.from_date);
+        formData.append('to_date', odForm.to_date);
+        formData.append('reason', odForm.reason);
+        formData.append('supporting_document', odForm.supporting_document);
+        payload = formData;
+      } else {
+        payload = {
+          student_id: studentId,
+          from_date: odForm.from_date,
+          to_date: odForm.to_date,
+          reason: odForm.reason
+        };
+      }
+      await studentODAPI.submitRequest(payload);
 
       setSuccess('OD request submitted successfully!');
-      setODForm({ from_date: '', to_date: '', reason: '' });
+      setODForm({ from_date: '', to_date: '', reason: '', supporting_document: null });
       fetchDashboardData();
       setActiveTab('requests');
     } catch (err) {
@@ -131,6 +146,23 @@ const StudentDashboard = ({ studentId, socket }) => {
     }
   };
 
+  const handleDownloadDocument = async (requestId, fileName) => {
+    try {
+      const response = await studentODAPI.downloadDocument(requestId);
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `OD_Document_${requestId}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError('Failed to download document: ' + err.message);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     const statusMap = {
       pending: 'badge-warning',
@@ -145,13 +177,21 @@ const StudentDashboard = ({ studentId, socket }) => {
   return (
     <div className="student-dashboard">
       {/* Header */}
+
       <div className="dashboard-header">
-        <h1>Student Dashboard</h1>
+        <div className="header-left">
+          <img 
+            src="/ssn_logo.png"
+            alt="SSN College Logo"
+            className="ssn-logo"
+          />
+          <h1>Student Dashboard</h1>
+        </div>
         <div className="dashboard-header-actions">
           {user?.name && <span className="user-name">{user.name}</span>}
-          <button onClick={fetchDashboardData} className="btn btn-secondary">
+          {/* <button onClick={fetchDashboardData} className="btn btn-secondary">
             Refresh
-          </button>
+          </button> */}
           <button onClick={handleLogout} className="btn btn-logout">
             <LogOut size={18} />
             Logout
@@ -304,6 +344,20 @@ const StudentDashboard = ({ studentId, socket }) => {
                 <small>{odForm.reason.length}/1000 characters</small>
               </div>
 
+              <div className="form-group">
+                <label htmlFor="supporting_document">Supporting Document (Optional)</label>
+                <input
+                  type="file"
+                  id="supporting_document"
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                  onChange={(e) => setODForm({ ...odForm, supporting_document: e.target.files?.[0] || null })}
+                />
+                <small>Accepted formats: PDF, PNG, JPG, DOC, DOCX</small>
+                {odForm.supporting_document && (
+                  <small>Selected: {odForm.supporting_document.name}</small>
+                )}
+              </div>
+
               <div className="form-info">
                 <p><strong>Note:</strong></p>
                 <ul>
@@ -364,6 +418,19 @@ const StudentDashboard = ({ studentId, socket }) => {
                         <p>{req.reason}</p>
                       </div>
 
+                      {req.supporting_document && (
+                        <div className="request-detail">
+                          <strong>Supporting Document:</strong>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleDownloadDocument(req.id, req.supporting_document.split('/').pop())}
+                            style={{ marginTop: '4px' }}
+                          >
+                            View Document
+                          </button>
+                        </div>
+                      )}
+
                       {req.reviewed_at && (
                         <>
                           <div className="request-detail">
@@ -419,12 +486,12 @@ const StudentDashboard = ({ studentId, socket }) => {
                   </div>
                   <div className="session-details">
                     <h3>{session.subject_name}</h3>
-                    <p className="session-faculty">👨‍🏫 {session.faculty_name}</p>
+                    <p className="session-faculty">{session.faculty_name}</p>
                     <p className="session-time">
-                      🕒 {session.start_time} - {session.end_time}
+                      {session.start_time} - {session.end_time}
                     </p>
                     {session.topic && (
-                      <p className="session-topic">📚 {session.topic}</p>
+                      <p className="session-topic">{session.topic}</p>
                     )}
                   </div>
                 </div>

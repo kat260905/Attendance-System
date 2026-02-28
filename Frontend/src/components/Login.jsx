@@ -39,7 +39,7 @@ export default function Login() {
       setError('Please select your role (Admin, Faculty, or Student)');
       return;
     }
-    
+
     if (isLogin) {
       const result = await login(formData);
       if (result.success) {
@@ -58,17 +58,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 w-full max-w-lg">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Attendance Management System
     <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          {/* <div className="bg-indigo-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
-            <User className="w-10 h-10 text-indigo-600" />
-          </div> */}
           <h1 className="text-2xl font-bold text-gray-800">
             {isLogin ? 'Welcome Back' : 'Create Account'}
           </h1>
@@ -77,26 +69,25 @@ export default function Login() {
           </p>
         </div>
 
-        {/* User Type Selection - Prominent Cards */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-3">I am a</label>
-          <div className="grid grid-cols-3 gap-3">
-            {ROLE_OPTIONS.map(({ value, label, icon: Icon, color, desc }) => (
+        {/* User Type Selection - Premium Segmented Control */}
+        <div className="mb-8">
+          <label className="block text-sm font-semibold text-gray-700 mb-3">Select your role</label>
+          <div className="flex p-1 bg-gray-100 rounded-xl relative">
+            {ROLE_OPTIONS.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => selectRole(value)}
-                className={`flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 ${
-                  formData.role === value
-                    ? 'border-indigo-500 bg-indigo-50 shadow-md'
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold relative z-10 transition-colors ${formData.role === value
+                  ? 'text-blue-900 bg-white shadow-sm ring-1 ring-black/5'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                  }`}
               >
-                <Icon className={`w-8 h-8 mb-2 ${formData.role === value ? 'text-indigo-600' : 'text-gray-500'}`} />
-                <span className={`font-medium text-sm ${formData.role === value ? 'text-indigo-700' : 'text-gray-700'}`}>
-                  {label}
-                </span>
-                <span className="text-xs text-gray-500 mt-0.5 hidden sm:block">{desc}</span>
+                <Icon
+                  className={`w-4 h-4 ${formData.role === value ? 'text-blue-600' : 'text-gray-400'}`}
+                  strokeWidth={formData.role === value ? 2.5 : 2}
+                />
+                {label}
               </button>
             ))}
           </div>
@@ -162,15 +153,13 @@ export default function Login() {
         <div className="mt-6 text-center">
           <button
             type="button"
-            onClick={() => { setIsLogin(!isLogin); setError(null); }}
-            className="text-indigo-600 hover:text-indigo-700 font-medium text-sm"
             onClick={() => {
               setIsLogin(!isLogin);
               setError(null);
             }}
             className="text-blue-700 hover:text-blue-800 font-medium"
           >
-            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            {/* {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'} */}
           </button>
         </div>
 

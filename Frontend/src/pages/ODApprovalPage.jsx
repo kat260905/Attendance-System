@@ -59,6 +59,23 @@ export default function ODApprovalPage() {
     }
   };
 
+  const handleDownloadDocument = async (requestId, fileName) => {
+    try {
+      const response = await adminODAPI.downloadDocument(requestId);
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `OD_Document_${requestId}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setMessage({ type: "error", text: err.response?.data?.error || "Failed to download document" });
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -84,7 +101,7 @@ export default function ODApprovalPage() {
           }`}
         >
           {message.text}
-          <button onClick={() => setMessage(null)} className="ml-2 text-sm underline">Dismiss</button>
+          <button onClick={() => setMessage(null)} className="ml-2 text-sm underline text-gray-600 hover:text-gray-900 cursor-pointer transition-colors">Dismiss</button>
         </div>
       )}
 
@@ -119,9 +136,20 @@ export default function ODApprovalPage() {
                     <p>
                       <span className="font-medium">Reason:</span> {req.reason}
                     </p>
+                    {req.supporting_document && (
+                      <p>
+                        <span className="font-medium">Supporting Document:</span>{" "}
+                        <button
+                          onClick={() => handleDownloadDocument(req.id, req.supporting_document.split('/').pop())}
+                          className="text-indigo-600 hover:text-indigo-800 underline cursor-pointer transition-colors"
+                        >
+                          View Document
+                        </button>
+                      </p>
+                    )}
                     <p className="text-gray-500">Requested: {req.requested_at}</p>
                   </div>
-                  {rejectRemarks[req.id] !== undefined && (
+                  {rejectRemarks[req.id] !== undefined && ( 
                     <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Rejection remarks (optional)</label>
                       <input
@@ -153,7 +181,7 @@ export default function ODApprovalPage() {
                   <button
                     onClick={() => handleApprove(req)}
                     disabled={actionLoading === req.id}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50 font-medium"
                   >
                     <Check size={18} />
                     Approve
@@ -162,7 +190,7 @@ export default function ODApprovalPage() {
                     <button
                       onClick={() => setRejectRemarks(prev => ({ ...prev, [req.id]: "" }))}
                       disabled={actionLoading === req.id}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50 font-medium"
                     >
                       <X size={18} />
                       Reject

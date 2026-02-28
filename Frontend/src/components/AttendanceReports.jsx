@@ -145,7 +145,7 @@ export default function AttendanceReports() {
       <div className="mb-6 pb-6 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <BarChart3 className="text-blue-900" />
-          Attendance Reports & Analytics
+          Attendance Reports
         </h2>
         <p className="text-gray-600 mt-2">
           {isAdmin() 

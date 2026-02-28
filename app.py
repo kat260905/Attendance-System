@@ -16,6 +16,8 @@ import pytz
 from flask import request, jsonify
 import os
 from models import StudentODRequest, ODRequestStatus
+from werkzeug.utils import secure_filename
+from uuid import uuid4
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -470,8 +472,13 @@ def get_class_sessions():
         "id": s.id,
         "subject_id": s.subject_id,
         "subject_name": s.subject.name,
+        "semester": s.subject.semester,
         "faculty_id": s.faculty_id,
         "faculty_name": s.faculty.user.name,
+        "class_id": s.class_id,
+        "year": s.class_data.year,
+        "department": s.class_data.department,
+        "section": s.class_data.section,
         "date": s.date.isoformat(),
         "start_time": s.start_time.isoformat() if s.start_time else None,
         "end_time": s.end_time.isoformat() if s.end_time else None,
@@ -528,6 +535,11 @@ def get_faculty_sessions(faculty_id):
         "id": s.id,
         "subject_id": s.subject_id,
         "subject_name": s.subject.name,
+        "semester": s.subject.semester,
+        "class_id": s.class_id,
+        "year": s.class_data.year,
+        "department": s.class_data.department,
+        "section": s.class_data.section,
         "date": s.date.isoformat(),
         "start_time": s.start_time.isoformat() if s.start_time else None,
         "end_time": s.end_time.isoformat() if s.end_time else None,
@@ -554,7 +566,12 @@ def get_sessions_by_class(class_id):
             "id": s.id,
             "subject_id": s.subject_id,
             "subject_name": s.subject.name,
+            "semester": s.subject.semester,
             "faculty_id": s.faculty_id,
+            "class_id": s.class_id,
+            "year": s.class_data.year,
+            "department": s.class_data.department,
+            "section": s.class_data.section,
             "date": s.date.isoformat(),
             "start_time": s.start_time.isoformat() if s.start_time else None,
             "end_time": s.end_time.isoformat() if s.end_time else None
@@ -826,6 +843,7 @@ def get_session_attendance(session_id):
         "attendance_id": r.id,
         "student_id": r.student_id,
         "student_name": r.student.name,
+        "roll_no": r.student.roll_no,
         "department": r.student.department,
         "status": r.status.value,
         "marked_by": r.marked_by,
@@ -1464,6 +1482,7 @@ def get_admin_pending_od_requests():
             "from_date": req.from_date.isoformat(),
             "to_date": req.to_date.isoformat(),
             "reason": req.reason,
+            "supporting_document": req.supporting_document,
             "requested_at": req.requested_at.isoformat() if req.requested_at else None,
         })
     return jsonify(result)
@@ -1616,6 +1635,7 @@ def get_pending_od():
 
     result = []
     for p in pending:
+        supporting_document = p.student_request.supporting_document if p.student_request else None
         result.append({
             "id": p.id,
             "student_id": p.student_id,
@@ -1624,6 +1644,8 @@ def get_pending_od():
             "session_id": p.session_id,
             "date": p.date.isoformat(),
             "reason": p.reason,
+            "student_request_id": p.student_request_id,
+            "supporting_document": supporting_document,
             "approved_by": p.approved_by,
             "approved_at": p.approved_at.isoformat() if p.approved_at else None
         })
@@ -1898,6 +1920,7 @@ def get_student_od_requests():
             "from_date": req.from_date.isoformat(),
             "to_date": req.to_date.isoformat(),
             "reason": req.reason,
+            "supporting_document": req.supporting_document,
             "status": req.status.value,
             "created_at": req.requested_at.isoformat() if req.requested_at else None,
             "reviewed_by": req.reviewed_by,
@@ -1920,15 +1943,25 @@ def submit_student_od_request():
       "reason": "Sports meet"
     }
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+
+    if data is None:
+        # For FormData, extract only the form fields we need
+        data = {
+            "student_id": request.form.get("student_id"),
+            "from_date": request.form.get("from_date"),
+            "to_date": request.form.get("to_date"),
+            "reason": request.form.get("reason")
+        }
     
-    if not data:
+    if not data or not any([data.get("student_id"), data.get("from_date")]):
         return jsonify({"error": "No data provided"}), 400
     
     student_id = data.get("student_id")
     from_date_str = data.get("from_date") or data.get("date")
     to_date_str = data.get("to_date") or from_date_str
     reason = data.get("reason")
+    supporting_document_path = None
     
     if not (student_id and from_date_str and reason):
         return jsonify({"error": "student_id, from_date, and reason are required"}), 400
@@ -1941,6 +1974,22 @@ def submit_student_od_request():
     
     if to_date < from_date:
         return jsonify({"error": "to_date cannot be before from_date"}), 400
+
+    uploaded_file = request.files.get("supporting_document")
+    if uploaded_file and uploaded_file.filename:
+        allowed_extensions = {"pdf", "png", "jpg", "jpeg", "doc", "docx"}
+        ext = uploaded_file.filename.rsplit(".", 1)[-1].lower() if "." in uploaded_file.filename else ""
+        if ext not in allowed_extensions:
+            return jsonify({"error": "Unsupported file type. Allowed: pdf, png, jpg, jpeg, doc, docx"}), 400
+
+        upload_dir = os.path.join(app.root_path, "uploads", "od_documents")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        safe_name = secure_filename(uploaded_file.filename)
+        file_name = f"{uuid4().hex}_{safe_name}"
+        save_path = os.path.join(upload_dir, file_name)
+        uploaded_file.save(save_path)
+        supporting_document_path = os.path.join("uploads", "od_documents", file_name).replace("\\", "/")
     
     # Get student's class_id (required for StudentODRequest)
     student = Student.query.get(student_id)
@@ -1954,6 +2003,7 @@ def submit_student_od_request():
             from_date=from_date,
             to_date=to_date,
             reason=reason,
+            supporting_document=supporting_document_path,
             status=ODRequestStatus.PENDING
         )
         db.session.add(od_request)
@@ -1994,6 +2044,596 @@ def cancel_student_od_request(request_id):
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/student/od/document/<int:request_id>", methods=["GET"])
+def get_od_document(request_id):
+    """Serve the supporting document for an OD request"""
+    req = StudentODRequest.query.get(request_id)
+    if not req:
+        return jsonify({"error": "OD request not found"}), 404
+    
+    if not req.supporting_document:
+        return jsonify({"error": "No document attached to this request"}), 404
+    
+    file_path = os.path.join(app.root_path, req.supporting_document)
+    
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Document file not found"}), 404
+    
+    try:
+        return send_file(file_path, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ========================================
+# FACULTY DASHBOARD ENDPOINTS
+# ========================================
+
+@app.route("/api/faculty/<int:faculty_id>/dashboard/summary", methods=["GET"])
+@require_faculty
+def get_faculty_dashboard_summary(faculty_id):
+    """
+    Get faculty dashboard summary: today's classes, overall attendance, defaulters, pending
+    """
+    try:
+        faculty = Faculty.query.get(faculty_id)
+        if not faculty:
+            return jsonify({"error": "Faculty not found"}), 404
+        
+        today = datetime.now(IST).date()
+        
+        # Get classes this faculty handles
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        class_ids = {r.class_id for r in fsc_rows}
+        
+        if not class_ids:
+            return jsonify({
+                "todays_classes": 0,
+                "overall_attendance": 0,
+                "total_defaulters": 0,
+                "pending_attendance": 0
+            })
+        
+        # Today's classes
+        todays_sessions = ClassSession.query.filter(
+            ClassSession.class_id.in_(list(class_ids)),
+            ClassSession.date == today
+        ).count()
+        
+        # Overall attendance
+        all_attendance = Attendance.query.join(ClassSession).filter(
+            ClassSession.class_id.in_(list(class_ids))
+        ).all()
+        
+        if all_attendance:
+            present_count = sum(1 for a in all_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+            overall_attendance = round((present_count / len(all_attendance)) * 100, 2)
+        else:
+            overall_attendance = 0
+        
+        # Total defaulters (students below 75%)
+        students = Student.query.filter(Student.class_id.in_(list(class_ids))).all()
+        defaulters = 0
+        
+        for student in students:
+            student_attendance = Attendance.query.join(ClassSession).filter(
+                Attendance.student_id == student.id,
+                ClassSession.class_id.in_(list(class_ids))
+            ).all()
+            
+            if student_attendance:
+                present = sum(1 for a in student_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+                percentage = (present / len(student_attendance)) * 100
+                if percentage < 75:
+                    defaulters += 1
+        
+        # Pending attendance (sessions today without marked attendance)
+        marked_sessions_today = Attendance.query.join(ClassSession).filter(
+            ClassSession.class_id.in_(list(class_ids)),
+            ClassSession.date == today
+        ).count()
+        
+        pending = max(0, todays_sessions - (marked_sessions_today if marked_sessions_today else 0))
+        
+        return jsonify({
+            "todays_classes": todays_sessions,
+            "overall_attendance": overall_attendance,
+            "total_defaulters": defaulters,
+            "pending_attendance": pending
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/faculty/<int:faculty_id>/dashboard/alerts", methods=["GET"])
+@require_faculty
+def get_faculty_course_alerts(faculty_id):
+    """
+    Get course-wise low attendance alerts (courses with students below 75%)
+    """
+    try:
+        # Get classes this faculty handles
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        
+        alerts = []
+        
+        for fsc in fsc_rows:
+            class_data = Class.query.get(fsc.class_id)
+            subject = Subject.query.get(fsc.subject_id)
+            
+            if not class_data or not subject:
+                continue
+            
+            # Get all students in this class
+            students = Student.query.filter_by(class_id=fsc.class_id).all()
+            
+            defaulter_count = 0
+            for student in students:
+                student_attendance = Attendance.query.join(ClassSession).filter(
+                    Attendance.student_id == student.id,
+                    ClassSession.subject_id == fsc.subject_id
+                ).all()
+                
+                if student_attendance:
+                    present = sum(1 for a in student_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+                    percentage = (present / len(student_attendance)) * 100
+                    if percentage < 75:
+                        defaulter_count += 1
+            
+            if defaulter_count > 0:
+                alerts.append({
+                    "class_id": fsc.class_id,
+                    "subject_id": fsc.subject_id,
+                    "subject_name": subject.name,
+                    "department": class_data.department,
+                    "year": class_data.year,
+                    "section": class_data.section,
+                    "defaulter_count": defaulter_count
+                })
+        
+        return jsonify(alerts)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/faculty/<int:faculty_id>/dashboard/weekly-trend", methods=["GET"])
+@require_faculty
+def get_faculty_weekly_trend(faculty_id):
+    """
+    Get weekly attendance trend (last 7 days)
+    """
+    try:
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        class_ids = {r.class_id for r in fsc_rows}
+        
+        if not class_ids:
+            return jsonify([])
+        
+        # Get last 7 days
+        today = datetime.now(IST).date()
+        trend = []
+        
+        for i in range(6, -1, -1):
+            day_date = today - timedelta(days=i)
+            day_name = day_date.strftime('%A')
+            
+            # Get attendance for this day
+            day_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.class_id.in_(list(class_ids)),
+                ClassSession.date == day_date
+            ).all()
+            
+            if day_attendance:
+                present = sum(1 for a in day_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+                average = (present / len(day_attendance)) * 100
+            else:
+                average = 0
+            
+            trend.append({
+                "day": day_name[:3],
+                "average": average
+            })
+        
+        return jsonify(trend)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/faculty/<int:faculty_id>/dashboard/course-comparison", methods=["GET"])
+@require_faculty
+def get_faculty_course_comparison(faculty_id):
+    """
+    Get course-wise attendance comparison
+    """
+    try:
+        fsc_rows = FacultySubjectClass.query.filter_by(faculty_id=faculty_id).all()
+        
+        comparison = []
+        
+        for fsc in fsc_rows:
+            subject = Subject.query.get(fsc.subject_id)
+            
+            if not subject:
+                continue
+            
+            # Get all attendance records for this subject
+            subject_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.subject_id == fsc.subject_id,
+                ClassSession.faculty_id == faculty_id
+            ).all()
+            
+            if subject_attendance:
+                present_count = sum(1 for a in subject_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+                avg_attendance = (present_count / len(subject_attendance)) * 100
+                total_sessions = len(subject_attendance)
+            else:
+                present_count = 0
+                avg_attendance = 0
+                total_sessions = 0
+            
+            comparison.append({
+                "subject_id": fsc.subject_id,
+                "subject_name": subject.name,
+                "avg_attendance": avg_attendance,
+                "present_count": present_count,
+                "total_sessions": total_sessions
+            })
+        
+        # Sort by attendance
+        comparison.sort(key=lambda x: x['avg_attendance'], reverse=True)
+        
+        return jsonify(comparison)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/faculty/<int:faculty_id>/dashboard/course-defaulters", methods=["GET"])
+@require_faculty
+def get_faculty_course_defaulters(faculty_id):
+    """
+    Get students below 75% in a specific course
+    Query params: class_id, subject_id
+    """
+    try:
+        class_id = request.args.get("class_id", type=int)
+        subject_id = request.args.get("subject_id", type=int)
+        
+        if not class_id or not subject_id:
+            return jsonify({"error": "class_id and subject_id are required"}), 400
+        
+        # Get all students in this class
+        students = Student.query.filter_by(class_id=class_id).all()
+        
+        defaulters = []
+        
+        for student in students:
+            student_attendance = Attendance.query.join(ClassSession).filter(
+                Attendance.student_id == student.id,
+                ClassSession.subject_id == subject_id
+            ).all()
+            
+            if student_attendance:
+                present = sum(1 for a in student_attendance if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD])
+                percentage = (present / len(student_attendance)) * 100
+                
+                if percentage < 75:
+                    defaulters.append({
+                        "name": student.name,
+                        "roll_no": student.roll_no,
+                        "attendance_percentage": percentage
+                    })
+        
+        # Sort by attendance
+        defaulters.sort(key=lambda x: x['attendance_percentage'])
+        
+        return jsonify(defaulters)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ========================================
+# ADMIN DASHBOARD ENDPOINTS
+# ========================================
+
+@app.route("/api/admin/dashboard/summary", methods=["GET"])
+def get_admin_dashboard_summary():
+    """
+    Get admin dashboard KPI summary:
+    - Total Students, Total Faculty, College Avg Attendance, Classes Conducted Today
+    """
+    try:
+        today = datetime.now(IST).date()
+
+        total_students = Student.query.count()
+        total_faculty = Faculty.query.count()
+
+        # College-wide average attendance
+        all_attendance = Attendance.query.all()
+        if all_attendance:
+            present_count = sum(
+                1 for a in all_attendance
+                if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+            )
+            college_avg = round((present_count / len(all_attendance)) * 100, 2)
+        else:
+            college_avg = 0
+
+        # Classes conducted today (sessions that have at least one attendance record)
+        todays_sessions = ClassSession.query.filter(ClassSession.date == today).all()
+        classes_today = len(todays_sessions)
+
+        return jsonify({
+            "total_students": total_students,
+            "total_faculty": total_faculty,
+            "college_avg_attendance": college_avg,
+            "classes_today": classes_today
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/dashboard/department-attendance", methods=["GET"])
+def get_admin_department_attendance():
+    """
+    Get department-wise attendance for bar chart.
+    Returns: [{department, avg_attendance, total_students, total_records}]
+    """
+    try:
+        # Get all departments from Classes
+        departments = db.session.query(Class.department).distinct().all()
+        result = []
+
+        for (dept,) in departments:
+            if not dept:
+                continue
+
+            # Get all class IDs for this department
+            class_ids = [c.id for c in Class.query.filter_by(department=dept).all()]
+
+            if not class_ids:
+                continue
+
+            # Get attendance records for this department
+            dept_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.class_id.in_(class_ids)
+            ).all()
+
+            student_count = Student.query.filter(Student.class_id.in_(class_ids)).count()
+
+            if dept_attendance:
+                present = sum(
+                    1 for a in dept_attendance
+                    if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+                )
+                avg = round((present / len(dept_attendance)) * 100, 1)
+            else:
+                avg = 0
+
+            result.append({
+                "department": dept,
+                "avg_attendance": avg,
+                "total_students": student_count,
+                "total_records": len(dept_attendance)
+            })
+
+        result.sort(key=lambda x: x['department'])
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/dashboard/year-wise-trend", methods=["GET"])
+def get_admin_year_wise_trend():
+    """
+    Get year-wise attendance trend for line chart.
+    Returns: [{year, avg_attendance, total_students}]
+    """
+    try:
+        years = db.session.query(Class.year).distinct().order_by(Class.year).all()
+        result = []
+
+        for (year,) in years:
+            if not year:
+                continue
+
+            class_ids = [c.id for c in Class.query.filter_by(year=year).all()]
+
+            if not class_ids:
+                continue
+
+            year_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.class_id.in_(class_ids)
+            ).all()
+
+            student_count = Student.query.filter(Student.class_id.in_(class_ids)).count()
+
+            if year_attendance:
+                present = sum(
+                    1 for a in year_attendance
+                    if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+                )
+                avg = round((present / len(year_attendance)) * 100, 1)
+            else:
+                avg = 0
+
+            result.append({
+                "year": year,
+                "label": f"Year {year}",
+                "avg_attendance": avg,
+                "total_students": student_count
+            })
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/dashboard/faculty-performance", methods=["GET"])
+def get_admin_faculty_performance():
+    """
+    Get faculty performance table data.
+    Returns: [{faculty_name, department, classes_taken, avg_attendance, missed_entries}]
+    """
+    try:
+        today = datetime.now(IST).date()
+        faculties = Faculty.query.all()
+        result = []
+
+        for faculty in faculties:
+            user = User.query.get(faculty.user_id)
+            if not user:
+                continue
+
+            # Total sessions assigned to this faculty
+            total_sessions = ClassSession.query.filter_by(faculty_id=faculty.id).count()
+
+            # Sessions that have attendance marked (at least one record)
+            sessions_with_attendance = db.session.query(
+                ClassSession.id
+            ).join(
+                Attendance, Attendance.session_id == ClassSession.id
+            ).filter(
+                ClassSession.faculty_id == faculty.id
+            ).distinct().count()
+
+            # Get attendance records for sessions by this faculty
+            faculty_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.faculty_id == faculty.id
+            ).all()
+
+            if faculty_attendance:
+                present = sum(
+                    1 for a in faculty_attendance
+                    if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+                )
+                avg = round((present / len(faculty_attendance)) * 100, 1)
+            else:
+                avg = 0
+
+            # Missed entries = past sessions with no attendance records
+            past_sessions = ClassSession.query.filter(
+                ClassSession.faculty_id == faculty.id,
+                ClassSession.date < today
+            ).count()
+
+            missed = max(0, past_sessions - sessions_with_attendance)
+
+            result.append({
+                "faculty_id": faculty.id,
+                "faculty_name": user.name,
+                "department": faculty.department or "N/A",
+                "classes_taken": sessions_with_attendance,
+                "total_assigned": total_sessions,
+                "avg_attendance": avg,
+                "missed_entries": missed
+            })
+
+        result.sort(key=lambda x: x['avg_attendance'], reverse=True)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/dashboard/alerts", methods=["GET"])
+def get_admin_dashboard_alerts():
+    """
+    Get admin alert panel data:
+    - Departments below 75% threshold
+    - Classes not marked today
+    - High defaulter batches (classes with most students below 75%)
+    """
+    try:
+        today = datetime.now(IST).date()
+
+        # 1. Departments below threshold
+        departments = db.session.query(Class.department).distinct().all()
+        low_departments = []
+
+        for (dept,) in departments:
+            if not dept:
+                continue
+            class_ids = [c.id for c in Class.query.filter_by(department=dept).all()]
+            if not class_ids:
+                continue
+
+            dept_attendance = Attendance.query.join(ClassSession).filter(
+                ClassSession.class_id.in_(class_ids)
+            ).all()
+
+            if dept_attendance:
+                present = sum(
+                    1 for a in dept_attendance
+                    if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+                )
+                avg = round((present / len(dept_attendance)) * 100, 1)
+                if avg < 75:
+                    low_departments.append({"department": dept, "attendance": avg})
+
+        # 2. Classes not marked today
+        todays_sessions = ClassSession.query.filter(ClassSession.date == today).all()
+        unmarked_classes = []
+
+        for session in todays_sessions:
+            has_attendance = Attendance.query.filter_by(session_id=session.id).first()
+            if not has_attendance:
+                subject = Subject.query.get(session.subject_id)
+                class_data = Class.query.get(session.class_id)
+                faculty = Faculty.query.get(session.faculty_id)
+                faculty_user = User.query.get(faculty.user_id) if faculty else None
+
+                unmarked_classes.append({
+                    "session_id": session.id,
+                    "subject": subject.name if subject else "Unknown",
+                    "class": f"{class_data.department} Yr{class_data.year} Sec {class_data.section}" if class_data else "Unknown",
+                    "faculty": faculty_user.name if faculty_user else "Unknown",
+                    "time": session.start_time.strftime("%H:%M") if session.start_time else "N/A"
+                })
+
+        # 3. High defaulter batches
+        all_classes = Class.query.all()
+        high_defaulter_batches = []
+
+        for cls in all_classes:
+            students = Student.query.filter_by(class_id=cls.id).all()
+            if not students:
+                continue
+
+            defaulter_count = 0
+            for student in students:
+                student_att = Attendance.query.join(ClassSession).filter(
+                    Attendance.student_id == student.id,
+                    ClassSession.class_id == cls.id
+                ).all()
+
+                if student_att:
+                    present = sum(
+                        1 for a in student_att
+                        if a.status in [AttendanceStatus.PRESENT, AttendanceStatus.OD]
+                    )
+                    pct = (present / len(student_att)) * 100
+                    if pct < 75:
+                        defaulter_count += 1
+
+            if defaulter_count > 0:
+                high_defaulter_batches.append({
+                    "class": f"{cls.department} Yr{cls.year} Sec {cls.section}",
+                    "class_id": cls.id,
+                    "defaulter_count": defaulter_count,
+                    "total_students": len(students),
+                    "percentage": round((defaulter_count / len(students)) * 100, 1)
+                })
+
+        high_defaulter_batches.sort(key=lambda x: x['defaulter_count'], reverse=True)
+
+        return jsonify({
+            "low_departments": low_departments,
+            "unmarked_classes": unmarked_classes,
+            "high_defaulter_batches": high_defaulter_batches[:10]  # Top 10
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 # Socket.IO event handlers
 @socketio.on('connect')
 def handle_connect():
@@ -2020,8 +2660,3 @@ if __name__ == "__main__":
     start_scheduler()
     socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=False)
 
-
-
-
-#if __name__=="__main__":
-#    app.run(debug=True)
