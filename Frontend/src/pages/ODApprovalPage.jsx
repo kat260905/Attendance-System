@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { adminODAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 import { Check, X, RefreshCw } from "lucide-react";
+import LoadingSpinner from "../components/LoadingSpinner";
+import Toast from "../components/Toast";
 
 export default function ODApprovalPage() {
   const { user } = useAuth();
@@ -94,21 +96,10 @@ export default function ODApprovalPage() {
         Student OD requests appear here. Approve to forward to the faculty for attendance marking.
       </p>
 
-      {message?.text && (
-        <div
-          className={`p-4 mb-4 rounded-lg ${
-            message.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"
-          }`}
-        >
-          {message.text}
-          <button onClick={() => setMessage(null)} className="ml-2 text-sm underline text-gray-600 hover:text-gray-900 cursor-pointer transition-colors">Dismiss</button>
-        </div>
-      )}
+
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
-        </div>
+        <LoadingSpinner text="Loading OD requests..." />
       ) : pending.length === 0 ? (
         <div className="p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
           <p className="text-gray-600">No pending OD requests from students.</p>
@@ -147,9 +138,17 @@ export default function ODApprovalPage() {
                         </button>
                       </p>
                     )}
-                    <p className="text-gray-500">Requested: {req.requested_at}</p>
+                    <p className="text-gray-500">Requested: {new Date(req.requested_at + "Z").toLocaleString("en-IN", {
+                      timeZone: "Asia/Kolkata",
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: true
+                    })}</p>
                   </div>
-                  {rejectRemarks[req.id] !== undefined && ( 
+                  {rejectRemarks[req.id] !== undefined && (
                     <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Rejection remarks (optional)</label>
                       <input
@@ -202,6 +201,7 @@ export default function ODApprovalPage() {
           ))}
         </div>
       )}
+      <Toast message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }

@@ -12,12 +12,10 @@ from dotenv import load_dotenv
 import os 
 from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class, ApprovedODRequest
 from datetime import datetime, timedelta
-import pytz
-from flask import request, jsonify
-import os
 from models import StudentODRequest, ODRequestStatus
 from werkzeug.utils import secure_filename
 from uuid import uuid4
+import redis
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -41,6 +39,64 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 migrate=Migrate(app, db)
 socketio= SocketIO(app, cors_allowed_origins="*")
+
+import json
+from functools import wraps
+
+# --- Redis Configuration ---
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+redis_client = None
+try:
+    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+    redis_client.ping() # Check connection
+    print("Connected to Redis successfully for caching.")
+except redis.ConnectionError:
+    redis_client = None
+    print("Warning: Redis is not running. Caching will be disabled.")
+
+def cache_response(timeout=120): # 2 mins default
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not redis_client:
+                return f(*args, **kwargs)
+            
+            # Create a unique cache key based on path and query string
+            # Also include kwargs (for URL path vars like <int:user_id>)
+            cache_key = f"cache:{request.path}:{request.query_string.decode('utf-8')}"
+            
+            try:
+                cached_val = redis_client.get(cache_key)
+                if cached_val:
+                    print(f"CACHE HIT [{request.path}]: Loaded from Redis!", flush=True)
+                    return jsonify(json.loads(cached_val))
+            except Exception as e:
+                print(f"Redis get error: {e}")
+                
+            # If not in cache, compute the response
+            print(f"CACHE MISS [{request.path}]: Fetching from Database...", flush=True)
+            response = f(*args, **kwargs)
+            
+            # Cache the JSON data if it's a successful JSON response
+            if getattr(response, 'status_code', 500) == 200 and getattr(response, 'is_json', False):
+                try:
+                    redis_client.setex(cache_key, timeout, json.dumps(response.get_json()))
+                except Exception as e:
+                    print(f"Redis set error: {e}")
+                    
+            return response
+        return decorated_function
+    return decorator
+
+def clear_api_cache():
+    if redis_client:
+        try:
+            keys = redis_client.keys("cache:*")
+            if keys:
+                redis_client.delete(*keys)
+        except Exception as e:
+            print(f"Redis clear error: {e}")
 
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -138,8 +194,6 @@ def start_scheduler():
 
 
 # Start scheduler once
-
-
 @app.route("/api/generate-week-sessions", methods=["POST"])
 def generate_week():
     return generate_weekly_sessions()
@@ -282,7 +336,7 @@ def register():
 def get_current_user():
     # In production, get user from JWT token
     user_id = request.args.get("user_id", 1)  # Placeholder
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
     
@@ -351,7 +405,7 @@ def get_student(student_id):
 #getByFacultySubject: (subject_id, faculty_id) => api.get(`/students/${subject_id}/${faculty_id}`)
 @app.route("/api/sessions/<int:session_id>/students", methods=["GET"])
 def get_by_session(session_id):
-    session = ClassSession.query.get(session_id)
+    session = db.session.get(ClassSession, session_id)
     if not session:
         return {"error": "Session not found"}, 404
 
@@ -427,7 +481,8 @@ def get_faculty_classes(faculty_id):
 
     return jsonify([
         {
-             "class_id": cls.id,
+            "class_id": cls.id,
+            "subject_id": subj.id,
             "department": cls.department,
             "year": cls.year,
             "section": cls.section,
@@ -596,6 +651,8 @@ def mark_attendance():
     """
 
     try:
+        clear_api_cache() # Clear cache on data update
+
         data = request.get_json()
         print(f"Received attendance data: {data}")  # Debug log
         
@@ -682,11 +739,6 @@ def mark_attendance():
         import traceback
         print(traceback.format_exc())   # <-- This will show the full error in terminal
         return jsonify({"error": str(e)}), 400
-        '''
-        db.session.rollback()
-        print(f"Error marking attendance: {str(e)}")  # Debug log
-        return jsonify({"error": str(e)}), 400
-        '''
 
 
 @app.route("/api/attendance/mark-by-suffix", methods=["POST"])
@@ -694,15 +746,9 @@ def mark_attendance():
 def mark_attendance_by_suffix():
     """
     Mark attendance by last 3 digits of register number.
-    Payload example:
-    {
-      "session_id": 12,
-      "suffixes": "135, 030, 45",  // comma or space separated
-      "status": "present" or "absent",
-      "marked_by": 45
-    }
     """
     try:
+        clear_api_cache()
         data = request.get_json()
         
         if not data:
@@ -729,7 +775,7 @@ def mark_attendance_by_suffix():
             return jsonify({"error": "No valid suffixes provided"}), 400
         
         # Get all students for this session
-        session = ClassSession.query.get(session_id)
+        session = db.session.get(ClassSession, session_id)
         if not session:
             return jsonify({"error": "Session not found"}), 404
             
@@ -856,6 +902,7 @@ def get_session_attendance(session_id):
 @app.route("/api/attendance/<int:attendance_id>", methods=["PUT"])
 @require_faculty
 def update_attendance(attendance_id):
+    clear_api_cache()
     data = request.get_json()
     new_status = data.get("status")
     changed_by = data.get("changed_by")
@@ -1269,61 +1316,61 @@ def upload_attendance_photo():
 '''
 
 
-import easyocr
-from rapidfuzz import fuzz, process
-from PIL import Image
-import numpy as np
-#import paddleocr
+# import easyocr
+# from rapidfuzz import fuzz, process
+# from PIL import Image
+# import numpy as np
+# #import paddleocr
 
-@app.route("/api/attendance/photo-upload", methods=["POST"])
-@require_faculty
-def attendance_photo_upload():
+# @app.route("/api/attendance/photo-upload", methods=["POST"])
+# @require_faculty
+# def attendance_photo_upload():
 
-    session_id = request.form.get("session_id")
-    faculty_id = request.form.get("faculty_id")
-    file = request.files.get("image")
+#     session_id = request.form.get("session_id")
+#     faculty_id = request.form.get("faculty_id")
+#     file = request.files.get("image")
 
-    if not session_id or not file:
-        return jsonify({"error": "session_id and image required"}), 400
+#     if not session_id or not file:
+#         return jsonify({"error": "session_id and image required"}), 400
 
-    # Save image temporarily
-    save_path = f"uploads/{session_id}_{faculty_id}.jpg"
-    file.save(save_path)
+#     # Save image temporarily
+#     save_path = f"uploads/{session_id}_{faculty_id}.jpg"
+#     file.save(save_path)
 
-    # Load session students from DB
-    session = ClassSession.query.get(session_id)
-    students = Student.query.filter_by(class_id=session.class_id).all()
+#     # Load session students from DB
+#     session = db.session.get(ClassSession, session_id)
+#     students = Student.query.filter_by(class_id=session.class_id).all()
 
-    # OCR
-    reader = easyocr.Reader(['en'])
-    image = Image.open(save_path)
-    result = reader.readtext(np.array(image), detail=0)
+#     # OCR
+#     # reader = easyocr.Reader(['en'])
+#     # image = Image.open(save_path)
+#     # result = reader.readtext(np.array(image), detail=0)
 
-    text_block = "\n".join(result)
+#     # text_block = "\n".join(result)
 
-    output = []
-    for s in students:
+#     # output = []
+#     # for s in students:
 
-        roll_match = str(s.roll_no) in text_block
-        name_match = process.extractOne(
-            s.name, text_block.split("\n"), scorer=fuzz.token_set_ratio
-        )
+#     #     roll_match = str(s.roll_no) in text_block
+#     #     name_match = process.extractOne(
+#     #         s.name, text_block.split("\n"), scorer=fuzz.token_set_ratio
+#     #     )
 
-        name_ok = name_match and name_match[1] > 70
+#     #     name_ok = name_match and name_match[1] > 70
 
-        present = roll_match or name_ok
+#     #     present = roll_match or name_ok
 
-        output.append({
-            "student_id": s.id,
-            "roll_no": s.roll_no,
-            "name": s.name,
-            "status": "present" if present else "absent"
-        })
+#     #     output.append({
+#     #         "student_id": s.id,
+#     #         "roll_no": s.roll_no,
+#     #         "name": s.name,
+#     #         "status": "present" if present else "absent"
+#     #     })
 
-    return jsonify({
-        "session_id": session_id,
-        "results": output
-    })
+#     # return jsonify({
+#     #     "session_id": session_id,
+#     #     "results": output
+#     # })
 
 
 # import cv2
@@ -1459,6 +1506,7 @@ def attendance_photo_upload():
 # ========================================
 
 @app.route("/api/admin/od/pending-requests", methods=["GET"])
+@cache_response(timeout=120)
 def get_admin_pending_od_requests():
     """
     Get all pending StudentODRequests for admin to review/approve.
@@ -1494,12 +1542,13 @@ def admin_approve_student_od_request(request_id):
     Admin approves a StudentODRequest. Creates ApprovedODRequest(s) for each date
     in the range (from_date to to_date), which faculty can then apply to attendance.
     """
+    clear_api_cache()
     data = request.get_json() or {}
     admin_user_id = data.get("approved_by")
     if not admin_user_id:
         return jsonify({"error": "approved_by (admin user id) is required"}), 400
     
-    req = StudentODRequest.query.get(request_id)
+    req = db.session.get(StudentODRequest, request_id)
     if not req:
         return jsonify({"error": "OD request not found"}), 404
     if req.status != ODRequestStatus.PENDING:
@@ -1537,11 +1586,12 @@ def admin_approve_student_od_request(request_id):
 @app.route("/api/admin/od/reject-request/<int:request_id>", methods=["POST"])
 def admin_reject_student_od_request(request_id):
     """Admin rejects a StudentODRequest."""
+    clear_api_cache()
     data = request.get_json() or {}
     admin_user_id = data.get("rejected_by")
     remarks = data.get("remarks", "")
     
-    req = StudentODRequest.query.get(request_id)
+    req = db.session.get(StudentODRequest, request_id)
     if not req:
         return jsonify({"error": "OD request not found"}), 404
     if req.status != ODRequestStatus.PENDING:
@@ -1572,6 +1622,7 @@ def approve_od():
       "approved_by": 1            -- admin user id
     }
     """
+    clear_api_cache()
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
@@ -1612,6 +1663,7 @@ def approve_od():
 # --- Faculty: list pending OD requests relevant to their classes ---
 @app.route("/api/od/pending", methods=["GET"])
 @require_faculty
+@cache_response(timeout=120)
 def get_pending_od():
     """
     Query: ?faculty_id=2
@@ -1658,12 +1710,13 @@ def apply_od(od_id):
     Faculty clicks 'Apply' on a pending OD request.
     Payload: { "faculty_id": 2 } - Faculty table id; we use faculty.user_id for marked_by (Attendance expects users.id)
     """
+    clear_api_cache()
     data = request.get_json() or {}
     faculty_id = data.get("faculty_id")
     if not faculty_id:
         return jsonify({"error": "faculty_id is required in payload"}), 400
 
-    faculty = Faculty.query.get(faculty_id)
+    faculty = db.session.get(Faculty, faculty_id)
     if not faculty:
         return jsonify({"error": "Faculty not found"}), 404
     # Attendance.marked_by and applied_by expect user_id (FK to users), not faculty_id
@@ -1770,6 +1823,7 @@ def apply_od(od_id):
 # ========================================
 
 @app.route("/api/student/attendance/summary", methods=["GET"])
+@cache_response(timeout=180)
 def get_student_attendance_summary():
     """
     Get attendance summary for a student
@@ -1782,7 +1836,7 @@ def get_student_attendance_summary():
         return jsonify({"error": "student_id is required"}), 400
     
     # Get student info
-    student = Student.query.get(student_id)
+    student = db.session.get(Student, student_id)
     if not student:
         return jsonify({"error": "Student not found"}), 404
     
@@ -1841,61 +1895,62 @@ def get_student_attendance_summary():
     })
 
 
-@app.route("/api/student/sessions/upcoming", methods=["GET"])
-def get_student_upcoming_sessions():
-    """
-    Get upcoming class sessions for a student
-    Query params: student_id (required), days (optional, default 7)
-    """
-    student_id = request.args.get("student_id", type=int)
-    days = request.args.get("days", type=int, default=7)
+# @app.route("/api/student/sessions/upcoming", methods=["GET"])
+# def get_student_upcoming_sessions():
+#     """
+#     Get upcoming class sessions for a student
+#     Query params: student_id (required), days (optional, default 7)
+#     """
+#     student_id = request.args.get("student_id", type=int)
+#     days = request.args.get("days", type=int, default=7)
     
-    if not student_id:
-        return jsonify({"error": "student_id is required"}), 400
+#     if not student_id:
+#         return jsonify({"error": "student_id is required"}), 400
     
-    # Get student's class
-    student = Student.query.get(student_id)
-    if not student:
-        return jsonify({"error": "Student not found"}), 404
+#     # Get student's class
+#     student = db.session.get(Student, student_id)
+#     if not student:
+#         return jsonify({"error": "Student not found"}), 404
     
-    class_id = student.class_id
-    if not class_id:
-        return jsonify([])
+#     class_id = student.class_id
+#     if not class_id:
+#         return jsonify([])
     
-    # Get upcoming sessions for this class
-    today = datetime.now(IST).date()
-    end_date = today + timedelta(days=days)
+#     # Get upcoming sessions for this class
+#     today = datetime.now(IST).date()
+#     end_date = today + timedelta(days=days)
     
-    sessions = ClassSession.query.filter(
-        ClassSession.class_id == class_id,
-        ClassSession.date >= today,
-        ClassSession.date <= end_date
-    ).order_by(ClassSession.date.asc(), ClassSession.start_time.asc()).all()
+#     sessions = ClassSession.query.filter(
+#         ClassSession.class_id == class_id,
+#         ClassSession.date >= today,
+#         ClassSession.date <= end_date
+#     ).order_by(ClassSession.date.asc(), ClassSession.start_time.asc()).all()
     
-    result = []
-    for s in sessions:
-        # Check if attendance already marked
-        attendance = Attendance.query.filter_by(
-            session_id=s.id,
-            student_id=student_id
-        ).first()
+#     result = []
+#     for s in sessions:
+#         # Check if attendance already marked
+#         attendance = Attendance.query.filter_by(
+#             session_id=s.id,
+#             student_id=student_id
+#         ).first()
         
-        result.append({
-            "session_id": s.id,
-            "subject_id": s.subject_id,
-            "subject_name": s.subject.name,
-            "faculty_name": s.faculty.user.name,
-            "date": s.date.isoformat(),
-            "start_time": s.start_time.isoformat() if s.start_time else None,
-            "end_time": s.end_time.isoformat() if s.end_time else None,
-            "topic": s.topic,
-            "attendance_status": attendance.status.value if attendance else None
-        })
+#         result.append({
+#             "session_id": s.id,
+#             "subject_id": s.subject_id,
+#             "subject_name": s.subject.name,
+#             "faculty_name": s.faculty.user.name,
+#             "date": s.date.isoformat(),
+#             "start_time": s.start_time.isoformat() if s.start_time else None,
+#             "end_time": s.end_time.isoformat() if s.end_time else None,
+#             "topic": s.topic,
+#             "attendance_status": attendance.status.value if attendance else None
+#         })
     
-    return jsonify(result)
+#     return jsonify(result)
 
 
 @app.route("/api/student/od/my-requests", methods=["GET"])
+@cache_response(timeout=120)
 def get_student_od_requests():
     """
     Get all OD requests submitted by a student
@@ -1943,6 +1998,7 @@ def submit_student_od_request():
       "reason": "Sports meet"
     }
     """
+    clear_api_cache()
     data = request.get_json(silent=True)
 
     if data is None:
@@ -1992,7 +2048,7 @@ def submit_student_od_request():
         supporting_document_path = os.path.join("uploads", "od_documents", file_name).replace("\\", "/")
     
     # Get student's class_id (required for StudentODRequest)
-    student = Student.query.get(student_id)
+    student = db.session.get(Student, student_id)
     if not student or not student.class_id:
         return jsonify({"error": "Student or class not found"}), 400
     
@@ -2022,12 +2078,13 @@ def submit_student_od_request():
 @app.route("/api/student/od/cancel/<int:request_id>", methods=["PUT"])
 def cancel_student_od_request(request_id):
     """Student cancels their own PENDING OD request."""
+    clear_api_cache()
     data = request.get_json() or {}
     student_id = data.get("student_id")
     if not student_id:
         return jsonify({"error": "student_id is required"}), 400
     
-    req = StudentODRequest.query.get(request_id)
+    req = db.session.get(StudentODRequest, request_id)
     if not req:
         return jsonify({"error": "OD request not found"}), 404
     if req.student_id != int(student_id):
@@ -2047,7 +2104,7 @@ def cancel_student_od_request(request_id):
 @app.route("/api/student/od/document/<int:request_id>", methods=["GET"])
 def get_od_document(request_id):
     """Serve the supporting document for an OD request"""
-    req = StudentODRequest.query.get(request_id)
+    req = db.session.get(StudentODRequest, request_id)
     if not req:
         return jsonify({"error": "OD request not found"}), 404
     
@@ -2071,12 +2128,13 @@ def get_od_document(request_id):
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/summary", methods=["GET"])
 @require_faculty
+@cache_response(timeout=120)
 def get_faculty_dashboard_summary(faculty_id):
     """
     Get faculty dashboard summary: today's classes, overall attendance, defaulters, pending
     """
     try:
-        faculty = Faculty.query.get(faculty_id)
+        faculty = db.session.get(Faculty, faculty_id)
         if not faculty:
             return jsonify({"error": "Faculty not found"}), 404
         
@@ -2147,6 +2205,7 @@ def get_faculty_dashboard_summary(faculty_id):
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/alerts", methods=["GET"])
 @require_faculty
+@cache_response(timeout=300)
 def get_faculty_course_alerts(faculty_id):
     """
     Get course-wise low attendance alerts (courses with students below 75%)
@@ -2158,8 +2217,8 @@ def get_faculty_course_alerts(faculty_id):
         alerts = []
         
         for fsc in fsc_rows:
-            class_data = Class.query.get(fsc.class_id)
-            subject = Subject.query.get(fsc.subject_id)
+            class_data = db.session.get(Class, fsc.class_id)
+            subject = db.session.get(Subject, fsc.subject_id)
             
             if not class_data or not subject:
                 continue
@@ -2198,6 +2257,7 @@ def get_faculty_course_alerts(faculty_id):
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/weekly-trend", methods=["GET"])
 @require_faculty
+@cache_response(timeout=300)
 def get_faculty_weekly_trend(faculty_id):
     """
     Get weekly attendance trend (last 7 days)
@@ -2241,6 +2301,7 @@ def get_faculty_weekly_trend(faculty_id):
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/course-comparison", methods=["GET"])
 @require_faculty
+@cache_response(timeout=300)
 def get_faculty_course_comparison(faculty_id):
     """
     Get course-wise attendance comparison
@@ -2251,7 +2312,7 @@ def get_faculty_course_comparison(faculty_id):
         comparison = []
         
         for fsc in fsc_rows:
-            subject = Subject.query.get(fsc.subject_id)
+            subject = db.session.get(Subject, fsc.subject_id)
             
             if not subject:
                 continue
@@ -2336,6 +2397,7 @@ def get_faculty_course_defaulters(faculty_id):
 # ========================================
 
 @app.route("/api/admin/dashboard/summary", methods=["GET"])
+@cache_response(timeout=120)
 def get_admin_dashboard_summary():
     """
     Get admin dashboard KPI summary:
@@ -2373,6 +2435,7 @@ def get_admin_dashboard_summary():
 
 
 @app.route("/api/admin/dashboard/department-attendance", methods=["GET"])
+@cache_response(timeout=300)
 def get_admin_department_attendance():
     """
     Get department-wise attendance for bar chart.
@@ -2423,6 +2486,7 @@ def get_admin_department_attendance():
 
 
 @app.route("/api/admin/dashboard/year-wise-trend", methods=["GET"])
+@cache_response(timeout=300)
 def get_admin_year_wise_trend():
     """
     Get year-wise attendance trend for line chart.
@@ -2469,6 +2533,7 @@ def get_admin_year_wise_trend():
 
 
 @app.route("/api/admin/dashboard/faculty-performance", methods=["GET"])
+@cache_response(timeout=300)
 def get_admin_faculty_performance():
     """
     Get faculty performance table data.
@@ -2480,7 +2545,7 @@ def get_admin_faculty_performance():
         result = []
 
         for faculty in faculties:
-            user = User.query.get(faculty.user_id)
+            user = db.session.get(User, faculty.user_id)
             if not user:
                 continue
 
@@ -2535,6 +2600,7 @@ def get_admin_faculty_performance():
 
 
 @app.route("/api/admin/dashboard/alerts", methods=["GET"])
+@cache_response(timeout=300)
 def get_admin_dashboard_alerts():
     """
     Get admin alert panel data:
@@ -2576,10 +2642,10 @@ def get_admin_dashboard_alerts():
         for session in todays_sessions:
             has_attendance = Attendance.query.filter_by(session_id=session.id).first()
             if not has_attendance:
-                subject = Subject.query.get(session.subject_id)
-                class_data = Class.query.get(session.class_id)
-                faculty = Faculty.query.get(session.faculty_id)
-                faculty_user = User.query.get(faculty.user_id) if faculty else None
+                subject = db.session.get(Subject, session.subject_id)
+                class_data = db.session.get(Class, session.class_id)
+                faculty = db.session.get(Faculty, session.faculty_id)
+                faculty_user = db.session.get(User, faculty.user_id) if faculty else None
 
                 unmarked_classes.append({
                     "session_id": session.id,

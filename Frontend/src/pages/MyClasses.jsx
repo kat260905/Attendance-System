@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { classSessionAPI, facultyAPI, attendanceAPI, studentAPI } from "../services/api";
 import { Calendar, Check, X, Hash, Save, Download } from "lucide-react";
+import Toast from "../components/Toast";
 
 export default function MyClassesPage() {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export default function MyClassesPage() {
       }
       grouped[date].push(session);
     });
-    
+
     // Return sorted dates
     return Object.keys(grouped).sort((a, b) => new Date(a) - new Date(b));
   }, [sessions]);
@@ -46,9 +47,9 @@ export default function MyClassesPage() {
     yesterday.setDate(yesterday.getDate() - 1);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const dateOnly = (d) => d.toISOString().split('T')[0];
-    
+
     if (dateOnly(date) === dateOnly(today)) {
       return 'Today';
     } else if (dateOnly(date) === dateOnly(yesterday)) {
@@ -56,7 +57,7 @@ export default function MyClassesPage() {
     } else if (dateOnly(date) === dateOnly(tomorrow)) {
       return 'Tomorrow';
     }
-    
+
     return date.toLocaleDateString('en-IN', {
       weekday: 'short',
       day: 'numeric',
@@ -74,17 +75,19 @@ export default function MyClassesPage() {
     setClasses(response.data);
   };
 
-  const handleClassSelect = async (classId) => {
-    setSelectedClass(classId);
+  const handleClassSelect = async (classId, subjectId) => {
+    setSelectedClass({ classId, subjectId });
     setSelectedDate(null);
     setSelectedSession(null);
     const response = await classSessionAPI.getByClass(classId, user.faculty_id);
 
-    setSessions(response.data);
-    
+    // Filter sessions to only show the selected subject
+    const filteredSessions = response.data.filter(s => s.subject_id === subjectId);
+    setSessions(filteredSessions);
+
     // Set default date to the first available date or today
-    if (response.data.length > 0) {
-      const dates = [...new Set(response.data.map(s => s.date))].sort((a, b) => new Date(a) - new Date(b));
+    if (filteredSessions.length > 0) {
+      const dates = [...new Set(filteredSessions.map(s => s.date))].sort((a, b) => new Date(a) - new Date(b));
       const today = new Date().toISOString().split('T')[0];
       const defaultDate = dates.includes(today) ? today : dates[0];
       setSelectedDate(defaultDate);
@@ -266,19 +269,19 @@ export default function MyClassesPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {classes.map(c => (
             <button
-              key={c.class_id}
-              onClick={() => handleClassSelect(c.class_id)}
-            className={`${selectedClass === c.class_id ? "bg-blue-100" : "bg-white"} 
+              key={`${c.class_id}-${c.subject_id}`}
+              onClick={() => handleClassSelect(c.class_id, c.subject_id)}
+              className={`${selectedClass?.classId === c.class_id && selectedClass?.subjectId === c.subject_id ? "bg-blue-100" : "bg-white"} 
               p-4 rounded-lg shadow border hover:bg-blue-50 transition-colors`}
-            
+
             >
-            
+
               <p className="font-medium">Dept: {c.department}</p>
               <p>Year: {c.year}</p>
               <p>Section: {c.section}</p>
               <p className="text-sm mt-2 text-gray-600">{c.subject_name}</p>
 
-             
+
             </button>
           ))}
         </div>
@@ -321,11 +324,10 @@ export default function MyClassesPage() {
                 <button
                   key={s.id}
                   onClick={() => handleSessionSelect(s)}
-                  className={`w-full text-left p-4 rounded-lg border transition-colors ${
-                    selectedSession?.id === s.id 
-                      ? "bg-blue-50 border-blue-900 border-2" 
-                      : "bg-white border-gray-200 hover:bg-gray-50"
-                  }`}
+                  className={`w-full text-left p-4 rounded-lg border transition-colors ${selectedSession?.id === s.id
+                    ? "bg-blue-50 border-blue-900 border-2"
+                    : "bg-white border-gray-200 hover:bg-gray-50"
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -353,12 +355,7 @@ export default function MyClassesPage() {
         <div>
           <h2 className="font-semibold text-xl mb-4">Attendance</h2>
 
-          {/* Error/Success Messages */}
-          {message && (
-            <div className={`${message.type === "success" ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"} rounded-lg p-4 mb-6`}>
-              <p className={message.type === "success" ? "text-green-600" : "text-red-600"}>{message.text}</p>
-            </div>
-          )}
+
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mb-6 pb-6 border-b border-gray-200">
@@ -437,11 +434,10 @@ export default function MyClassesPage() {
               <button
                 onClick={handleSuffixMark}
                 disabled={!selectedSession || suffixLoading || !suffixInput.trim()}
-                className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  suffixMode === 'present' 
-                    ? 'bg-green-400 text-white hover:bg-green-500' 
-                    : 'bg-red-400 text-white hover:bg-red-500'
-                }`}
+                className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${suffixMode === 'present'
+                  ? 'bg-green-400 text-white hover:bg-green-500'
+                  : 'bg-red-400 text-white hover:bg-red-500'
+                  }`}
               >
                 {suffixLoading ? (
                   <>
@@ -456,7 +452,7 @@ export default function MyClassesPage() {
                 )}
               </button>
             </div>
-            
+
             {/* Show result of suffix marking */}
             {suffixResult && suffixResult.marked.length > 0 && (
               <div className="mt-3 p-3 bg-gray-50 rounded-lg">
@@ -465,13 +461,12 @@ export default function MyClassesPage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {suffixResult.marked.map((s, idx) => (
-                    <span 
+                    <span
                       key={idx}
-                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        suffixMode === 'present' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}
+                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${suffixMode === 'present'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                        }`}
                     >
                       {s.roll_no} - {s.name}
                     </span>
@@ -540,55 +535,54 @@ export default function MyClassesPage() {
                     const status = attendance[student.id] || "absent";
                     const isOD = status === "od";
                     return (
-                  <tr 
-                    key={student.id}
-                    className={`border-b hover:bg-gray-50 transition-colors ${
-                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                    }`}
-                  >
-                    <td className="px-6 py-4 text-sm font-medium text-gray-700">
-                      {student.roll_no}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-800">
-                      {student.name}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {student.department}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <input
-                        type="checkbox"
-                        checked={status === "present"}
-                        onChange={() => toggleAttendance(student.id)}
-                        disabled={isOD}
-                        className="w-5 h-5 text-blue-900 rounded checked:bg-green-600 focus:ring-2 focus:ring-blue-900 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      {isOD ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                          ✓
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      {status === "present" ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                          Present
-                        </span>
-                      ) : status === "od" ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                          OD
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-                          Absent
-                        </span>
-                      )}
-                    </td>
-                  </tr>
+                      <tr
+                        key={student.id}
+                        className={`border-b hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                          }`}
+                      >
+                        <td className="px-6 py-4 text-sm font-medium text-gray-700">
+                          {student.roll_no}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-800">
+                          {student.name}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {student.department}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={status === "present"}
+                            onChange={() => toggleAttendance(student.id)}
+                            disabled={isOD}
+                            className="w-5 h-5 text-blue-900 rounded checked:bg-green-600 focus:ring-2 focus:ring-blue-900 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          {isOD ? (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          {status === "present" ? (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                              Present
+                            </span>
+                          ) : status === "od" ? (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                              OD
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+                              Absent
+                            </span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })()
                 ))}
@@ -598,6 +592,7 @@ export default function MyClassesPage() {
 
         </div>
       )}
+      <Toast message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }

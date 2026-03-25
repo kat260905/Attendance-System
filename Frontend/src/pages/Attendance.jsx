@@ -4,6 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { studentAPI, classSessionAPI, attendanceAPI, subjectAPI, facultyAPI } from '../services/api';
 import socketService from '../services/socket';
 import PhotoAttendanceModal from "../components/PhotoAttendanceModal";
+import LoadingSpinner from "../components/LoadingSpinner";
+import Toast from "../components/Toast";
 
 
 export default function AttendancePage() {
@@ -24,17 +26,17 @@ export default function AttendancePage() {
   const [suffixResult, setSuffixResult] = useState(null);
 
 
-  const currentDate = new Date().toLocaleDateString('en-IN', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  const currentDate = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   });
 
   useEffect(() => {
     loadInitialData();
     setupSocketListeners();
-    
+
     return () => {
       socketService.offAttendanceMarked();
       socketService.offAttendanceUpdated();
@@ -43,7 +45,7 @@ export default function AttendancePage() {
 
   const loadInitialData = async () => {
     try {
-     
+
       setLoading(true);
       // Faculty: fetch sessions for their classes. Admin: fetch all sessions.
       const sessionsPromise = user?.faculty_id
@@ -53,27 +55,27 @@ export default function AttendancePage() {
         subjectAPI.getAll(),
         sessionsPromise
       ]);
-      
+
       //setStudents(studentsRes.data);
       setSubjects(subjectsRes.data);
       setSessions(sessionsRes.data);
-      
+
       // Set today's session as default if available
       const today = new Date().toISOString().split('T')[0];
       const todaySession = sessionsRes.data.find(s => s.date === today);
       if (todaySession) {
         setSelectedSession(todaySession);
-        
+
         // Load students for the session
         const studentsRes = await studentAPI.getBySession(todaySession.id);
         setStudents(studentsRes.data);
-        
+
         loadSessionAttendance(todaySession.id);
         socketService.joinSession(todaySession.id);
       }
     } catch (error) {
       console.error('Failed to load initial data:', error);
-       if (user?.role !== "ADMIN") {
+      if (user?.role !== "ADMIN") {
         setError('Failed to load data. Please refresh the page.');
       }
     } finally {
@@ -83,7 +85,7 @@ export default function AttendancePage() {
 
   const setupSocketListeners = () => {
     socketService.connect();
-    
+
     socketService.onAttendanceMarked((data) => {
       if (data.session_id === selectedSession?.id) {
         setSuccess(`Attendance marked for student ${data.student_id}`);
@@ -116,7 +118,7 @@ export default function AttendancePage() {
   const handleSessionChange = async (sessionId) => {
     const session = sessions.find(s => s.id === parseInt(sessionId));
     setSelectedSession(session);
-    setAttendance({}); 
+    setAttendance({});
 
     if (session) {
       const studentsRes = await studentAPI.getBySession(session.id);
@@ -248,7 +250,7 @@ export default function AttendancePage() {
       const response = await attendanceAPI.exportAttendance({
         session_id: selectedSession.id
       });
-      
+
       const blob = new Blob([response.data], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -270,11 +272,8 @@ export default function AttendancePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading attendance system...</p>
-        </div>
+      <div className="min-h-screen bg-white">
+        <LoadingSpinner text="Loading attendance system..." />
       </div>
     );
   }
@@ -323,8 +322,8 @@ export default function AttendancePage() {
                 <option value="">Select a session...</option>
                 {sessions.map(session => (
                   <option key={session.id} value={session.id}>
-                    {session.subject_name} - {new Date(session.date).toLocaleDateString()} 
-                    {session.start_time && ` (${session.start_time.slice(0,5)} - ${session.end_time?.slice(0,5)})`}
+                    {session.subject_name} - {new Date(session.date).toLocaleDateString()}
+                    {session.start_time && ` (${session.start_time.slice(0, 5)} - ${session.end_time?.slice(0, 5)})`}
                   </option>
                 ))}
               </select>
@@ -336,7 +335,7 @@ export default function AttendancePage() {
                   <p><strong>Subject:</strong> {selectedSession.subject_name}</p>
                   <p><strong>Date:</strong> {new Date(selectedSession.date).toLocaleDateString()}</p>
                   {selectedSession.start_time && (
-                    <p><strong>Time:</strong> {selectedSession.start_time.slice(0,5)} - {selectedSession.end_time?.slice(0,5)}</p>
+                    <p><strong>Time:</strong> {selectedSession.start_time.slice(0, 5)} - {selectedSession.end_time?.slice(0, 5)}</p>
                   )}
                   {/* {selectedSession.topic && (
                     <p><strong>Topic:</strong> {selectedSession.topic}</p>
@@ -347,18 +346,7 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        {/* Error/Success Messages */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <p className="text-red-600">{error}</p>
-          </div>
-        )}
-        
-        {success && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-            <p className="text-green-600">{success}</p>
-          </div>
-        )}
+
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 mb-6 pb-6 border-b border-gray-200">
@@ -426,11 +414,10 @@ export default function AttendancePage() {
             <button
               onClick={handleSuffixMark}
               disabled={!selectedSession || suffixLoading || !suffixInput.trim()}
-              className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                suffixMode === 'present' 
-                  ? 'bg-green-400 text-white hover:bg-green-500' 
-                  : 'bg-red-400 text-white hover:bg-red-500'
-              }`}
+              className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${suffixMode === 'present'
+                ? 'bg-green-400 text-white hover:bg-green-500'
+                : 'bg-red-400 text-white hover:bg-red-500'
+                }`}
             >
               {suffixLoading ? (
                 <>
@@ -445,7 +432,7 @@ export default function AttendancePage() {
               )}
             </button>
           </div>
-          
+
           {/* Show result of suffix marking */}
           {suffixResult && suffixResult.marked.length > 0 && (
             <div className="mt-3 p-3 bg-gray-50 rounded-lg">
@@ -454,13 +441,12 @@ export default function AttendancePage() {
               </p>
               <div className="flex flex-wrap gap-2">
                 {suffixResult.marked.map((s, idx) => (
-                  <span 
+                  <span
                     key={idx}
-                    className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                      suffixMode === 'present' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}
+                    className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${suffixMode === 'present'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-red-100 text-red-800'
+                      }`}
                   >
                     {s.roll_no} - {s.name}
                   </span>
@@ -495,7 +481,7 @@ export default function AttendancePage() {
                 disabled={!selectedSession}
                 className="px-4 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-              <Download size={18} />
+                <Download size={18} />
                 Export CSV
               </button>
               <button
@@ -541,11 +527,10 @@ export default function AttendancePage() {
             </thead>
             <tbody>
               {students.map((student, index) => (
-                <tr 
+                <tr
                   key={student.id}
-                  className={`border-b hover:bg-gray-50 transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                  }`}
+                  className={`border-b hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                    }`}
                 >
                   <td className="px-6 py-4 text-sm font-medium text-gray-700">
                     {student.roll_no}
@@ -588,6 +573,15 @@ export default function AttendancePage() {
           </button>
         </div>*/}
       </div>
-    </div> 
+      <Toast
+        message={
+          error ? { type: "error", text: error } : success ? { type: "success", text: success } : null
+        }
+        onDismiss={() => {
+          setError(null);
+          setSuccess(null);
+        }}
+      />
+    </div>
   );
 }

@@ -45,8 +45,7 @@ export default function Navigation({ currentPage, onPageChange }) {
     navigationItems.push(
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'applyOD', label: 'Apply for OD', icon: FileCheck },
-      { id: 'myRequests', label: 'My OD Requests', icon: ClipboardCheck },
-      { id: 'upcomingClasses', label: 'Upcoming Classes', icon: BookOpen }
+      { id: 'myRequests', label: 'My OD Requests', icon: ClipboardCheck }
     );
   }
 

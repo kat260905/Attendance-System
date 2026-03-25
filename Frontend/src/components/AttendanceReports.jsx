@@ -239,7 +239,7 @@ export default function AttendanceReports() {
             <button
               onClick={generateReport}
               disabled={loading}
-              className="px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-blue-800 text-white rounded-lg hover:bg-blue-800 transition-colors flex items-center gap-2 disabled:opacity-50"
             >
               <BarChart3 size={18} />
               {loading ? 'Generating...' : 'Generate Report'}

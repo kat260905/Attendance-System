@@ -121,12 +121,6 @@ export const studentODAPI = {
       params: { student_id: studentId }
     }),
 
-  // Get upcoming sessions
-  getUpcomingSessions: (studentId, days = 7) =>
-    api.get('/student/sessions/upcoming', {
-      params: { student_id: studentId, days }
-    }),
-
   // Download OD supporting document
   downloadDocument: (requestId) =>
     api.get(`/student/od/document/${requestId}`, {

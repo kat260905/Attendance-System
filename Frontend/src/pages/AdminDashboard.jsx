@@ -8,6 +8,7 @@ import {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function AdminDashboard() {
     const [summary, setSummary] = useState(null);
@@ -17,6 +18,7 @@ export default function AdminDashboard() {
     const [alerts, setAlerts] = useState(null);
     const [loading, setLoading] = useState(true);
     const [expandedAlert, setExpandedAlert] = useState('unmarked');
+    const [selectedDepartment, setSelectedDepartment] = useState('');
 
     useEffect(() => {
         loadDashboardData();
@@ -38,6 +40,11 @@ export default function AdminDashboard() {
             setYearTrend(yearRes.data);
             setFacultyPerformance(facultyRes.data);
             setAlerts(alertsRes.data);
+
+            if (facultyRes.data?.length > 0) {
+                const depts = [...new Set(facultyRes.data.map(f => f.department).filter(Boolean))].sort();
+                setSelectedDepartment(prev => prev || (depts.length > 0 ? depts[0] : ''));
+            }
         } catch (err) {
             console.error('Failed to load admin dashboard data:', err);
         } finally {
@@ -50,11 +57,7 @@ export default function AdminDashboard() {
     };
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900"></div>
-            </div>
-        );
+        return <LoadingSpinner text="Loading admin analytics..." />;
     }
 
     const kpiCards = [
@@ -121,10 +124,10 @@ export default function AdminDashboard() {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-sm font-medium text-gray-600">{card.title}</p>
-                                        <p className="text-3xl font-bold text-gray-900 mt-2">{card.value}</p>
+                                        <p className="text-2xl font-bold text-gray-900 mt-2">{card.value}</p>
                                     </div>
                                     <div className={`${card.bgColor} rounded-full p-3`}>
-                                        <Icon className={card.textColor} size={24} />
+                                        <Icon className={card.textColor} size={20} />
                                     </div>
                                 </div>
                             </div>
@@ -175,7 +178,7 @@ export default function AdminDashboard() {
                                             {deptAttendance.map((entry, index) => (
                                                 <Cell
                                                     key={`cell-${index}`}
-                                                    fill={entry.avg_attendance >= 75 ? '#3b82f6' : '#ef4444'}
+                                                    fill={entry.avg_attendance >= 75 ? '#6399ef' : '#f36e6e'}
                                                 />
                                             ))}
                                         </Bar>
@@ -247,71 +250,92 @@ export default function AdminDashboard() {
 
                 {/* Faculty Performance Table */}
                 <div className="bg-white rounded-lg shadow mb-8">
-                    <div className="p-6 border-b border-gray-200">
-                        <h2 className="text-xl font-bold text-gray-900">Faculty Performance</h2>
-                        <p className="text-sm text-gray-600 mt-1">Overview of all faculty members</p>
+                    <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-900">Faculty Performance</h2>
+                            <p className="text-sm text-gray-600 mt-1">Overview of faculty members</p>
+                        </div>
+                        {(() => {
+                            const departments = [...new Set(facultyPerformance.map(f => f.department).filter(Boolean))].sort();
+                            if (departments.length <= 1) return null;
+                            return (
+                                <select
+                                    value={selectedDepartment}
+                                    onChange={(e) => setSelectedDepartment(e.target.value)}
+                                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-900 focus:outline-none"
+                                >
+                                    {departments.map(dept => (
+                                        <option key={dept} value={dept}>{dept}</option>
+                                    ))}
+                                </select>
+                            );
+                        })()}
                     </div>
 
-                    {facultyPerformance.length > 0 ? (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Faculty</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-                                        <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Classes Taken</th>
-                                        <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Avg Attendance %</th>
-                                        <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Missed Entries</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {facultyPerformance.map((faculty, idx) => (
-                                        <tr
-                                            key={idx}
-                                            className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                                                }`}
-                                        >
-                                            <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                                {faculty.faculty_name}
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-600">
-                                                {faculty.department}
-                                            </td>
-                                            <td className="px-6 py-4 text-center text-sm text-gray-900">
-                                                {faculty.classes_taken}
-                                            </td>
-                                            <td className="px-6 py-4 text-center">
-                                                <span
-                                                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${faculty.avg_attendance >= 75
+                    {(() => {
+                        const displayedFaculties = facultyPerformance.filter(f => f.department === selectedDepartment);
+
+                        return displayedFaculties.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Faculty</th>
+                                            <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
+                                            <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Classes Taken</th>
+                                            <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Avg Attendance %</th>
+                                            <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">Missed Entries</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {displayedFaculties.map((faculty, idx) => (
+                                            <tr
+                                                key={idx}
+                                                className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                                    }`}
+                                            >
+                                                <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                                    {faculty.faculty_name}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-600">
+                                                    {faculty.department}
+                                                </td>
+                                                <td className="px-6 py-4 text-center text-sm text-gray-900">
+                                                    {faculty.classes_taken}
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span
+                                                        className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${faculty.avg_attendance >= 75
                                                             ? 'bg-green-100 text-green-800'
                                                             : 'bg-red-100 text-red-800'
-                                                        }`}
-                                                >
-                                                    {faculty.avg_attendance.toFixed(1)}%
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-center">
-                                                <span
-                                                    className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${faculty.missed_entries === 0
+                                                            }`}
+                                                    >
+                                                        {faculty.avg_attendance.toFixed(1)}%
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span
+                                                        className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${faculty.missed_entries === 0
                                                             ? 'bg-green-100 text-green-800'
                                                             : faculty.missed_entries <= 3
                                                                 ? 'bg-yellow-100 text-yellow-800'
                                                                 : 'bg-red-100 text-red-800'
-                                                        }`}
-                                                >
-                                                    {faculty.missed_entries}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <div className="p-6 text-center text-gray-500">
-                            <p>No faculty data available.</p>
-                        </div>
-                    )}
+                                                            }`}
+                                                    >
+                                                        {faculty.missed_entries}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="p-6 text-center text-gray-500">
+                                <p>No faculty data available for the selected department.</p>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Alerts Panel */}

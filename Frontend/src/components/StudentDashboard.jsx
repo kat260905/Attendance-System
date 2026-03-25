@@ -24,7 +24,6 @@ const StudentDashboard = ({ studentId, socket }) => {
   };
   const [attendanceSummary, setAttendanceSummary] = useState(null);
   const [odRequests, setODRequests] = useState([]);
-  const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -58,16 +57,14 @@ const StudentDashboard = ({ studentId, socket }) => {
     setLoading(true);
     try {
       // Fetch all data in parallel
-      const [summaryRes, requestsRes, sessionsRes] = await Promise.all([
+      const [summaryRes, requestsRes] = await Promise.all([
         studentODAPI.getAttendanceSummary(studentId),
-        studentODAPI.getMyRequests(studentId),
-        studentODAPI.getUpcomingSessions(studentId, 7)
+        studentODAPI.getMyRequests(studentId)
       ]);
 
       // API returns { overall: { total, present, absent, od, percentage }, ... }
       setAttendanceSummary(summaryRes.data.overall ? { ...summaryRes.data.overall } : summaryRes.data);
       setODRequests(requestsRes.data);
-      setUpcomingSessions(sessionsRes.data);
       
 
     } catch (err) {
@@ -236,12 +233,6 @@ const StudentDashboard = ({ studentId, socket }) => {
             <span className="badge">{odRequests.filter(r => r.status === 'pending').length}</span>
           )}
         </button>
-        <button
-          className={`tab ${activeTab === 'sessions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sessions')}
-        >
-          Upcoming Classes
-        </button>
       </div>
 
       {/* Tab Content */}
@@ -288,12 +279,6 @@ const StudentDashboard = ({ studentId, socket }) => {
                 onClick={() => setActiveTab('apply-od')}
               >
                 Apply for OD
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setActiveTab('sessions')}
-              >
-                View Upcoming Classes
               </button>
             </div>
           </div>
@@ -469,37 +454,6 @@ const StudentDashboard = ({ studentId, socket }) => {
           <div className="sessions-tab">
             <h2>Upcoming Classes (Next 7 Days)</h2>
             
-            {upcomingSessions.length === 0 ? (
-              <div className="empty-state">
-                <p>No upcoming classes in the next 7 days.</p>
-              </div>
-            ) : (
-              <div className="sessions-list">
-                {upcomingSessions.map(session => (
-                <div key={session.session_id} className="session-card">
-                  <div className="session-date">
-                    {new Date(session.date).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </div>
-                  <div className="session-details">
-                    <h3>{session.subject_name}</h3>
-                    <p className="session-faculty">{session.faculty_name}</p>
-                    <p className="session-time">
-                      {session.start_time} - {session.end_time}
-                    </p>
-                    {session.topic && (
-                      <p className="session-topic">{session.topic}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

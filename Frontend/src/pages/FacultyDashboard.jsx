@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { facultyAPI } from '../services/api';
-import { Calendar, TrendingUp, AlertTriangle, Clock, RefreshCw, ChevronRight } from 'lucide-react';
+import { Calendar, TrendingUp, AlertTriangle, Clock, RefreshCw, ChevronRight, X } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function FacultyDashboard() {
   const { user } = useAuth();
@@ -58,11 +59,7 @@ export default function FacultyDashboard() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900"></div>
-      </div>
-    );
+    return <LoadingSpinner text="Loading faculty dashboard..." />;
   }
 
   return (
@@ -92,10 +89,10 @@ export default function FacultyDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Today's Classes</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{summary?.todays_classes || 0}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-2">{summary?.todays_classes || 0}</p>
               </div>
               <div className="bg-blue-100 rounded-full p-3">
-                <Calendar className="text-blue-600" size={24} />
+                <Calendar className="text-blue-600" size={20} />
               </div>
             </div>
           </div>
@@ -105,10 +102,10 @@ export default function FacultyDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Overall Avg Attendance</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{summary?.overall_attendance || 0}%</p>
+                <p className="text-2xl font-bold text-gray-900 mt-2">{summary?.overall_attendance || 0}%</p>
               </div>
               <div className="bg-green-100 rounded-full p-3">
-                <TrendingUp className="text-green-600" size={24} />
+                <TrendingUp className="text-green-600" size={20} />
               </div>
             </div>
           </div>
@@ -118,10 +115,10 @@ export default function FacultyDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Defaulters</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{summary?.total_defaulters || 0}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-2">{summary?.total_defaulters || 0}</p>
               </div>
               <div className="bg-red-100 rounded-full p-3">
-                <AlertTriangle className="text-red-600" size={24} />
+                <AlertTriangle className="text-red-600" size={20} />
               </div>
             </div>
           </div>
@@ -131,10 +128,10 @@ export default function FacultyDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Pending Attendance</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{summary?.pending_attendance || 0}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-2">{summary?.pending_attendance || 0}</p>
               </div>
               <div className="bg-yellow-100 rounded-full p-3">
-                <Clock className="text-yellow-600" size={24} />
+                <Clock className="text-yellow-600" size={20} />
               </div>
             </div>
           </div>
@@ -289,7 +286,7 @@ export default function FacultyDashboard() {
                       {courseComparison.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={entry.avg_attendance >= 75 ? '#22c55e' : '#ef4444'}
+                          fill={entry.avg_attendance >= 75 ? '#5fe28f' : '#f36e6e'}
                         />
                       ))}
                     </Bar>
@@ -307,26 +304,38 @@ export default function FacultyDashboard() {
 
       {/* Defaulter Students Modal */}
       {showStudentList && selectedCourse && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-96 overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+        <div 
+          className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity"
+          onClick={() => setShowStudentList(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col transform transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-100 flex justify-between items-start bg-white">
               <div>
-                <h3 className="text-lg font-bold text-gray-900">{selectedCourse.subject_name}</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  {selectedCourse.department} Yr{selectedCourse.year} Sec {selectedCourse.section}
+                <h3 className="text-xl font-bold text-gray-900">{selectedCourse.subject_name}</h3>
+                <p className="text-sm font-medium text-gray-500 mt-1.5 flex items-center gap-2">
+                  <span className="bg-gray-100 px-2 py-0.5 rounded-md text-gray-700">
+                    {selectedCourse.department} Yr{selectedCourse.year}
+                  </span>
+                  <span className="bg-gray-100 px-2 py-0.5 rounded-md text-gray-700">
+                    Sec {selectedCourse.section}
+                  </span>
                 </p>
               </div>
               <button
                 onClick={() => setShowStudentList(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
+                className="text-gray-400 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-full transition-colors flex-shrink-0"
+                aria-label="Close modal"
               >
-                ×
+                <X size={20} strokeWidth={2.5} />
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1">
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                <thead className="bg-gray-50/80 sticky top-0 backdrop-blur-md border-b border-gray-100 z-10">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Student Name</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Roll No</th>

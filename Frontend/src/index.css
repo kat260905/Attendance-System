@@ -71,5 +71,24 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
-  }
 } */
+
+/* Custom minimal scrollbar for scrollable lists */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #fca5a5;
+  /* red-300 matched to the alert box */
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #f87171;
+  /* red-400 */
+}

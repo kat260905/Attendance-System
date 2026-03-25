@@ -39,8 +39,6 @@ export default function Dashboard() {
         return <StudentDashboard section="apply-od" />;
       case 'myRequests':
         return <StudentDashboard section="requests" />;
-      case 'upcomingClasses':
-        return <StudentDashboard section="sessions" />;
       default:
         return <Attendance />;
     }

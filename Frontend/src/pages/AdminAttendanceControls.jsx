@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { attendanceAPI, classSessionAPI } from "../services/api";
 import { Save } from "lucide-react";
+import Toast from "../components/Toast";
 
 const FILTER_ORDER = [
   "academicYear",
@@ -282,13 +283,7 @@ export default function AdminAttendanceControls() {
           </p>
         </div>
 
-        {message && (
-          <div
-            className={`p-3 mb-6 rounded ${message.type === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}
-          >
-            {message.text}
-          </div>
-        )}
+
 
         <div className="mb-6 pb-6 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Filter Structure</h2>
@@ -421,7 +416,7 @@ export default function AdminAttendanceControls() {
             <button
               onClick={saveChanges}
               disabled={saving || loadingAttendance}
-              className="inline-flex items-center px-4 py-2 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-50"
+              className="inline-flex items-center px-4 py-2 bg-blue-800 text-white rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-50"
             >
               <Save size={18} className="mr-2" />
               {saving ? "Saving..." : "Save Changes"}
@@ -475,9 +470,8 @@ export default function AdminAttendanceControls() {
                             value={reason}
                             onChange={(e) => handleEditChange(attendanceId, { reason: e.target.value })}
                             placeholder="Required for edits"
-                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent ${
-                              reasonMissing ? "border-red-400" : "border-gray-300"
-                            }`}
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent ${reasonMissing ? "border-red-400" : "border-gray-300"
+                              }`}
                           />
                         </td>
                       </tr>
@@ -489,6 +483,7 @@ export default function AdminAttendanceControls() {
           )}
         </div>
       </div>
+      <Toast message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }
