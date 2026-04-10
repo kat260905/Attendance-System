@@ -159,13 +159,6 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                 <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
                                 <p className="text-gray-600 mt-2">{subtitle}</p>
                             </div>
-                            <button
-                                onClick={fetchDashboardData}
-                                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                            >
-                                <RefreshCw size={18} />
-                                Refresh
-                            </button>
                         </div>
                     </div>
 
@@ -378,11 +371,11 @@ export default function StudentDashboard({ section = 'dashboard' }) {
 
                     {/* ===== APPLY OD SECTION ===== */}
                     {section === 'apply-od' && (
-                        <div className="bg-white rounded-lg shadow max-w-2xl">
-                            <form onSubmit={handleODSubmit} className="p-6 space-y-5">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="bg-white rounded-lg shadow p-8 max-w-2xl mx-auto mt-6">
+                            <form onSubmit={handleODSubmit} className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">From Date *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">From Date <span className="text-red-500">*</span></label>
                                         <input
                                             type="date"
                                             value={odForm.from_date}
@@ -390,11 +383,11 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                             required
                                             min={new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]}
                                             max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-shadow"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">To Date *</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">To Date <span className="text-red-500">*</span></label>
                                         <input
                                             type="date"
                                             value={odForm.to_date}
@@ -402,13 +395,13 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                             required
                                             min={odForm.from_date || new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]}
                                             max={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-shadow"
                                         />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Reason <span className="text-red-500">*</span></label>
                                     <textarea
                                         value={odForm.reason}
                                         onChange={(e) => setODForm({ ...odForm, reason: e.target.value })}
@@ -416,46 +409,63 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                         rows={4}
                                         placeholder="Please provide a detailed reason for your OD request..."
                                         maxLength={1000}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none transition-shadow"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">{odForm.reason.length}/1000 characters</p>
+                                    <div className="text-right text-xs text-gray-500 mt-1 font-medium">{odForm.reason.length}/1000 characters</div>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Supporting Document (Optional)</label>
-                                    <div className="flex items-center gap-2">
-                                        <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors text-sm">
-                                            <Upload size={16} />
-                                            Choose File
-                                            <input
-                                                type="file"
-                                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                                onChange={(e) => setODForm({ ...odForm, supporting_document: e.target.files?.[0] || null })}
-                                                className="hidden"
-                                            />
-                                        </label>
-                                        <span className="text-sm text-gray-500">
-                                            {odForm.supporting_document ? odForm.supporting_document.name : 'No file selected'}
-                                        </span>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Supporting Document <span className="text-red-500">*</span></label>
+                                    <div className="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-300 border-dashed rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group cursor-pointer relative">
+                                        <input
+                                            type="file"
+                                            required
+                                            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                            onChange={(e) => setODForm({ ...odForm, supporting_document: e.target.files?.[0] || null })}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        />
+                                        <div className="space-y-2 text-center pointer-events-none">
+                                            <Upload className="mx-auto h-10 w-10 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                                            <div className="text-sm text-gray-600 block">
+                                                <span className="font-semibold text-blue-600">Click to upload</span> or drag and drop
+                                            </div>
+                                            <p className="text-xs text-gray-500">PDF, PNG, JPG, DOC up to 5MB</p>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-gray-400 mt-1">Accepted: PDF, PNG, JPG, DOC, DOCX</p>
+                                    {odForm.supporting_document && (
+                                        <p className="mt-2 text-sm text-green-600 font-semibold flex items-center justify-center gap-2 bg-green-50 py-2 rounded-md">
+                                            <CheckCircle size={16} />
+                                            {odForm.supporting_document.name}
+                                        </p>
+                                    )}
                                 </div>
 
-                                <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4">
-                                    <p className="text-sm font-semibold text-blue-800 mb-2">Note:</p>
-                                    <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
-                                        <li>You can request OD for dates up to 7 days in the past</li>
-                                        <li>You can request OD for dates up to 30 days in the future</li>
-                                        <li>Your request will be sent to admin for approval</li>
-                                        <li>Once approved, faculty will mark your attendance as OD</li>
+                                <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 mt-4">
+                                    <p className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                        <AlertTriangle size={16} /> Important Notes
+                                    </p>
+                                    <ul className="text-sm text-blue-800 space-y-2 list-none pl-1">
+                                        <li className="flex items-start gap-2">
+                                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block flex-shrink-0"></div>
+                                            <span>Request OD for dates up to <strong>7 days in the past</strong> or <strong>30 days in the future</strong>.</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block flex-shrink-0"></div>
+                                            <span>Requests are sent to the administrator for review.</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block flex-shrink-0"></div>
+                                            <span>Once approved, faculty will mark your attendance as OD automatically.</span>
+                                        </li>
                                     </ul>
                                 </div>
 
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full py-3 mt-4 bg-blue-900 text-white rounded-lg hover:bg-blue-800 transition-colors text-base font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
+                                    {loading && <LoadingSpinner size={18} inline={true} />}
                                     {loading ? 'Submitting...' : 'Submit OD Request'}
                                 </button>
                             </form>

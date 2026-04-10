@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { adminODAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
-import { Check, X, RefreshCw } from "lucide-react";
+import { Check, X } from "lucide-react";
 import LoadingSpinner from "../components/LoadingSpinner";
 import Toast from "../components/Toast";
 
@@ -80,16 +80,8 @@ export default function ODApprovalPage() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold">OD Approval</h1>
-        <button
-          onClick={loadPending}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-          Refresh
-        </button>
       </div>
 
       <p className="text-gray-600 mb-4">

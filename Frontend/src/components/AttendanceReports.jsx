@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Download, Users, TrendingUp, FileText } from 'lucide-react';
+import { BarChart3, Download, Users, TrendingUp, FileText, UserCheck, UserX, UserSearch, Target } from 'lucide-react';
 import { attendanceAPI, studentAPI, classSessionAPI, facultyAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -257,51 +257,68 @@ export default function AttendanceReports() {
 
       {/* Summary Cards */}
       {reports.summary.total_records > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 pb-6 border-b border-gray-200">
-          <div className="bg-blue-50 rounded-lg p-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 pb-6 border-b border-gray-200">
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow">
             <div className="flex items-center gap-3">
-              <div className="bg-blue-100 rounded-full p-3">
-                <FileText className="text-blue-600" size={24} />
+              <div className="bg-white rounded-full p-2.5 border border-gray-300 shadow-sm">
+                <FileText className="text-gray-700" size={20} />
               </div>
               <div>
-                <div className="text-sm text-gray-600">Total Records</div>
-                <div className="text-2xl font-bold text-gray-800">{reports.summary.total_records}</div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500">Total Records</div>
+                <div className="text-2xl font-bold text-gray-900">{reports.summary.total_records}</div>
               </div>
             </div>
           </div>
 
-          <div className="bg-green-50 rounded-lg p-6">
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow">
             <div className="flex items-center gap-3">
-              <div className="bg-green-100 rounded-full p-3">
-                <Users className="text-green-600" size={24} />
+              <div className="bg-white rounded-full p-2.5 border border-gray-300 shadow-sm text-green-600">
+                <UserCheck size={20} />
               </div>
               <div>
-                <div className="text-sm text-gray-600">Present</div>
-                <div className="text-2xl font-bold text-green-600">{reports.summary.summary?.present || 0}</div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500">Present</div>
+                <div className="text-2xl font-bold text-gray-900">{reports.summary.summary?.present || 0}</div>
               </div>
             </div>
           </div>
 
-          <div className="bg-red-50 rounded-lg p-6">
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow">
             <div className="flex items-center gap-3">
-              <div className="bg-red-100 rounded-full p-3">
-                <Users className="text-red-600" size={24} />
+              <div className="bg-white rounded-full p-2.5 border border-gray-300 shadow-sm text-red-600">
+                <UserX size={20} />
               </div>
               <div>
-                <div className="text-sm text-gray-600">Absent</div>
-                <div className="text-2xl font-bold text-red-600">{reports.summary.summary?.absent || 0}</div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500">Absent</div>
+                <div className="text-2xl font-bold text-gray-900">{reports.summary.summary?.absent || 0}</div>
               </div>
             </div>
           </div>
 
-          <div className="bg-blue-50 rounded-lg p-6">
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow">
             <div className="flex items-center gap-3">
-              <div className="bg-blue-100 rounded-full p-3">
-                <TrendingUp className="text-blue-900" size={24} />
+              <div className="bg-white rounded-full p-2.5 border border-gray-300 shadow-sm text-blue-600">
+                <UserSearch size={20} />
               </div>
               <div>
-                <div className="text-sm text-gray-600">Overall Attendance %</div>
-                <div className="text-2xl font-bold text-blue-900">{getAttendancePercentage()}%</div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500">On Duty</div>
+                <div className="text-2xl font-bold text-gray-900">{reports.summary.summary?.od || 0}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow md:col-span-1 col-span-2">
+            <div className="flex items-center justify-between h-full">
+              <div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500 flex items-center gap-1"><Target size={14} /> Overall</div>
+                <div className={`text-3xl font-extrabold ${getPercentageColor(getAttendancePercentage())}`}>
+                  {getAttendancePercentage()}%
+                </div>
+              </div>
+              <div className={`rounded-full p-3 bg-white border ${
+                getAttendancePercentage() >= 75 ? 'border-green-200 text-green-600' :
+                getAttendancePercentage() >= 65 ? 'border-yellow-200 text-yellow-600' : 'border-red-200 text-red-600'
+              } shadow-sm`}>
+                <TrendingUp size={24} />
               </div>
             </div>
           </div>

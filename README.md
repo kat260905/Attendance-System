@@ -44,6 +44,7 @@ A comprehensive attendance management system built with Flask (Python) backend a
 - **Flask-SocketIO**: Real-time bidirectional communication
 - **Flask-CORS**: Cross-Origin Resource Sharing support
 - **Flask-Migrate**: Database migration management
+- **Redis**: In-memory data store for API response caching
 - **APScheduler**: Background task scheduling for session generation
 - **python-dotenv**: Environment variable management
 
@@ -54,6 +55,7 @@ A comprehensive attendance management system built with Flask (Python) backend a
 - **Tailwind CSS**: Utility-first CSS framework for styling
 - **Axios**: HTTP client for API requests
 - **Socket.IO Client**: Real-time communication client
+- **Recharts**: Composable charting library for dashboards
 - **React Router v6**: Client-side routing
 - **Lucide Icons**: Beautiful, consistent icon library
 - **ESLint**: Code quality and style checking
@@ -290,21 +292,48 @@ _Note: Base URL is `http://localhost:5000`_
 ?to=YYYY-MM-DD          - End date
 ```
 
-### OD Management
+### Student OD Workflow
 
-| Method | Endpoint                 | Purpose               |
-| ------ | ------------------------ | --------------------- |
-| GET    | `/api/od-requests`       | Get OD requests       |
-| POST   | `/api/od-requests`       | Submit OD request     |
-| GET    | `/api/od-approvals`      | Get pending approvals |
-| PUT    | `/api/od-approvals/{id}` | Approve/reject OD     |
+| Method | Endpoint                          | Purpose                                 |
+| ------ | --------------------------------- | --------------------------------------- |
+| POST   | `/api/student/od/submit`          | Submit a new OD request (with document) |
+| GET    | `/api/student/od/my-requests`     | Get all OD requests for a student       |
+| GET    | `/api/student/od/document/{id}`   | Download supporting document for an OD  |
+| GET    | `/api/student/attendance/summary` | Get personal attendance summary         |
 
-### Timetable Management
+### Admin OD Management
 
-| Method | Endpoint         | Purpose             |
-| ------ | ---------------- | ------------------- |
-| GET    | `/api/timetable` | Get timetable       |
-| POST   | `/api/timetable` | Add timetable entry |
+| Method | Endpoint                             | Purpose                             |
+| ------ | ------------------------------------ | ----------------------------------- |
+| GET    | `/api/admin/od/pending-requests`     | Get all pending student OD requests |
+| POST   | `/api/admin/od/approve-request/{id}` | Approve a student's OD request      |
+| POST   | `/api/admin/od/reject-request/{id}`  | Reject a student's OD request       |
+
+### Faculty OD Application
+
+| Method | Endpoint             | Purpose                              |
+| ------ | -------------------- | ------------------------------------ |
+| GET    | `/api/od/pending`    | Get approved ODs ready to be applied |
+| PUT    | `/api/od/apply/{id}` | Apply an approved OD to attendance   |
+
+### Dashboard & Analytics
+
+| Method                    | Endpoint                                     | Purpose                                                                  |
+| ------------------------- | -------------------------------------------- | ------------------------------------------------------------------------ |
+| GET                       | `/api/admin/dashboard/summary`               | Get admin dashboard summary stats                                        |
+| GET                       | `/api/admin/dashboard/department-attendance` | Get attendance breakdown by department                                   |
+| GET                       | `/api/admin/dashboard/faculty-performance`   | Get metrics on faculty activity                                          |
+| GET                       | `/api/faculty/{id}/dashboard/summary`        | Get faculuser_id, roll_no, name, department, year, class_id              |
+| **faculties**             | Faculty profiles                             | id, user_id, department                                                  |
+| **subjects**              | Course subjects                              | id, code, name, semester                                                 |
+| **classes**               | Class information                            | id, department, year, section                                            |
+| **class_sessions**        | Individual class sessions                    | id, subject_id, faculty_id, class_id, date, start_time, end_time, topic  |
+| **attendance**            | Attendance records                           | id, session_id, student_id, status, marked_by, marked_at, reason         |
+| **attendance_logs**       | Audit trail for changes                      | id, attendance_id, prev_status, new_status, changed_by, changed_at, note |
+| **timetables**            | Weekly timetable entries                     | id, faculty_id, subject_id, day_of_week, start_time, end_time            |
+| **faculty_subject_class** | Faculty-Subject-Class mapping                | id, faculty_id, subject_id, class_id                                     |
+| **student_od_requests**   | Student-initiated OD requests                | id, student_id, from_date, to_date, reason, status, reviewed_by          |
+| **approved_od_requests**  | Admin-approved ODs for faculty               | id, student_id, date, reason, approved_by, applied, applied_by           |
 
 ### Utilities
 
@@ -353,6 +382,7 @@ attendance-zip/
 │   ├── models.py              # SQLAlchemy ORM models
 │   ├── init_db.py             # Database initialization and sample data
 │   ├── start_system.py        # System startup script
+│   ├── migration_student_od.py # Migration script for OD system
 │   ├── requirements.txt       # Python dependencies
 │   └── .env                   # Environment variables (not in repo)
 │
@@ -378,21 +408,28 @@ attendance-zip/
 │   │   │   ├── App.css            # App component styles
 │   │   │   │
 │   │   │   ├── components/
-│   │   │   │   ├── Attendance.jsx         # Attendance marking UI
+│   │   │   │   ├── AdminODreview.jsx      # Admin OD review UI
 │   │   │   │   ├── AttendanceReports.jsx  # Reports generation component
-│   │   │   │   ├── Navigation.jsx        # Navigation bar
-│   │   │   │   ├── Login.jsx             # Login page
-│   │   │   │   └── PhotoAttendanceModal.jsx # Photo upload modal
+│   │   │   │   ├── LoadingSpinner.jsx     # Loading component
+│   │   │   │   ├── Login.jsx              # Login page
+│   │   │   │   ├── Navigation.jsx         # Navigation bar
+│   │   │   │   ├── PhotoAttendanceModal.jsx # Photo upload modal
+│   │   │   │   ├── StudentDashboard.jsx   # Student Dashboard view
+│   │   │   │   └── Toast.jsx              # Toast notifications
 │   │   │   │
 │   │   │   ├── contexts/
 │   │   │   │   └── AuthContext.jsx       # Authentication context
 │   │   │   │
 │   │   │   ├── pages/
-│   │   │   │   ├── Attendance.jsx        # Attendance page
-│   │   │   │   ├── Dashboard.jsx         # Dashboard page
-│   │   │   │   ├── MyClasses.jsx         # Classes management
-│   │   │   │   ├── ODApprovalPage.jsx    # OD approval page
-│   │   │   │   └── ODPendingPage.jsx     # OD pending requests
+│   │   │   │   ├── AdminAttendanceControls.jsx # Advanced attendance controls
+│   │   │   │   ├── AdminDashboard.jsx     # Admin Dashboard page
+│   │   │   │   ├── Attendance.jsx         # Attendance page
+│   │   │   │   ├── Dashboard.jsx          # Generic Dashboard page
+│   │   │   │   ├── FacultyDashboard.jsx   # Faculty Dashboard page
+│   │   │   │   ├── MyClasses.jsx          # Classes management
+│   │   │   │   ├── ODApprovalPage.jsx     # OD approval page
+│   │   │   │   ├── ODPendingPage.jsx      # OD pending requests
+│   │   │   │   └── StudentDashboard.jsx   # Student portal
 │   │   │   │
 │   │   │   ├── services/
 │   │   │   │   ├── api.js                # API client (Axios)
@@ -678,7 +715,7 @@ For issues, questions, or suggestions:
 | Version | Release Date | Key Features                                  |
 | ------- | ------------ | --------------------------------------------- |
 | 1.0.0   | 2026-02-12   | Initial release with core attendance features |
-| 1.1.0   | TBD          | OD management system                          |
+| 1.1.0   | 2026-03-15   | OD management system & Student Dashboards     |
 | 1.2.0   | TBD          | Mobile app support                            |
 | 2.0.0   | TBD          | Advanced analytics and reporting              |
 

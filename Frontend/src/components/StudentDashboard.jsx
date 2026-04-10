@@ -186,9 +186,6 @@ const StudentDashboard = ({ studentId, socket }) => {
         </div>
         <div className="dashboard-header-actions">
           {user?.name && <span className="user-name">{user.name}</span>}
-          {/* <button onClick={fetchDashboardData} className="btn btn-secondary">
-            Refresh
-          </button> */}
           <button onClick={handleLogout} className="btn btn-logout">
             <LogOut size={18} />
             Logout
@@ -286,37 +283,40 @@ const StudentDashboard = ({ studentId, socket }) => {
 
         {/* Apply OD Tab */}
         {activeTab === 'apply-od' && (
-          <div className="apply-od-tab">
-            <h2>Apply for On-Duty (OD)</h2>
-            <form onSubmit={handleODSubmit} className="od-form">
-              <div className="form-group">
-                <label htmlFor="from_date">From Date *</label>
-                <input
-                  type="date"
-                  id="from_date"
-                  value={odForm.from_date}
-                  onChange={(e) => setODForm({ ...odForm, from_date: e.target.value })}
-                  required
-                  min={new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                  max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                />
+          <div className="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto mt-6">
+            <form onSubmit={handleODSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="from_date" className="block text-sm font-medium text-gray-700 mb-2">From Date *</label>
+                  <input
+                    type="date"
+                    id="from_date"
+                    value={odForm.from_date}
+                    onChange={(e) => setODForm({ ...odForm, from_date: e.target.value })}
+                    required
+                    min={new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="to_date" className="block text-sm font-medium text-gray-700 mb-2">To Date *</label>
+                  <input
+                    type="date"
+                    id="to_date"
+                    value={odForm.to_date}
+                    onChange={(e) => setODForm({ ...odForm, to_date: e.target.value })}
+                    required
+                    min={odForm.from_date || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent outline-none"
+                  />
+                </div>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="to_date">To Date *</label>
-                <input
-                  type="date"
-                  id="to_date"
-                  value={odForm.to_date}
-                  onChange={(e) => setODForm({ ...odForm, to_date: e.target.value })}
-                  required
-                  min={odForm.from_date || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                  max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="reason">Reason *</label>
+              <div>
+                <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
                 <textarea
                   id="reason"
                   value={odForm.reason}
@@ -325,27 +325,42 @@ const StudentDashboard = ({ studentId, socket }) => {
                   rows={4}
                   placeholder="Please provide a detailed reason for your OD request..."
                   maxLength={1000}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent outline-none resize-none"
                 />
-                <small>{odForm.reason.length}/1000 characters</small>
+                <div className="text-right text-xs text-gray-500 mt-1">{odForm.reason.length}/1000 characters</div>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="supporting_document">Supporting Document (Optional)</label>
-                <input
-                  type="file"
-                  id="supporting_document"
-                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                  onChange={(e) => setODForm({ ...odForm, supporting_document: e.target.files?.[0] || null })}
-                />
-                <small>Accepted formats: PDF, PNG, JPG, DOC, DOCX</small>
+              <div>
+                <label htmlFor="supporting_document" className="block text-sm font-medium text-gray-700 mb-2">Supporting Document (Optional)</label>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="space-y-1 text-center">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div className="flex text-sm text-gray-600 justify-center">
+                      <label htmlFor="supporting_document" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 px-1">
+                        <span>Upload a file</span>
+                        <input
+                          type="file"
+                          id="supporting_document"
+                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                          onChange={(e) => setODForm({ ...odForm, supporting_document: e.target.files?.[0] || null })}
+                          className="sr-only"
+                        />
+                      </label>
+                      <p className="pl-1">or drag and drop</p>
+                    </div>
+                    <p className="text-xs text-gray-500">PDF, PNG, JPG, DOC up to 5MB</p>
+                  </div>
+                </div>
                 {odForm.supporting_document && (
-                  <small>Selected: {odForm.supporting_document.name}</small>
+                  <p className="mt-2 text-sm text-green-600 font-medium break-all text-center">Selected: {odForm.supporting_document.name}</p>
                 )}
               </div>
 
-              <div className="form-info">
-                <p><strong>Note:</strong></p>
-                <ul>
+              <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                <p className="text-sm font-semibold text-blue-800 mb-2">Note:</p>
+                <ul className="list-disc pl-5 text-sm text-blue-700 space-y-1">
                   <li>You can request OD for dates up to 7 days in the past</li>
                   <li>You can request OD for dates up to 30 days in the future</li>
                   <li>Your request will be sent to admin for approval</li>
@@ -353,7 +368,11 @@ const StudentDashboard = ({ studentId, socket }) => {
                 </ul>
               </div>
 
-              <button type="submit" className="btn btn-primary" disabled={loading}>
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-800 hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-900 disabled:opacity-50 transition-colors"
+              >
                 {loading ? 'Submitting...' : 'Submit OD Request'}
               </button>
             </form>
@@ -453,7 +472,11 @@ const StudentDashboard = ({ studentId, socket }) => {
         {activeTab === 'sessions' && (
           <div className="sessions-tab">
             <h2>Upcoming Classes (Next 7 Days)</h2>
-            
+            <div className="empty-state">
+              <p>Upcoming sessions will appear here.</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

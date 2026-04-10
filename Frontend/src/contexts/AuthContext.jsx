@@ -24,11 +24,18 @@ export const AuthProvider = ({ children }) => {
   const checkAuthStatus = async () => {
     try {
       setLoading(true);
-      // In a real app, you'd check for stored token and validate it
-      // For now, we'll simulate checking auth status
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        // Fetch current user details with JWT
+        try {
+          const res = await authAPI.getCurrentUser();
+          setUser(res.data);
+          localStorage.setItem('user', JSON.stringify(res.data));
+        } catch (err) {
+          console.error('Initial auth check failed', err);
+          // Token is likely expired, interceptor will try to refresh it
+          // OR if it fails, the interceptor will log us out
+        }
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -43,11 +50,17 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       console.log('Attempting login with:', credentials); // Debug log
-      
+
       const response = await authAPI.login(credentials);
       console.log('Login response:', response); // Debug log
-      
+
       const userData = response.data.user;
+      const { access_token, refresh_token } = response.data;
+      
+      localStorage.setItem('access_token', access_token);
+      localStorage.setItem('refresh_token', refresh_token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
       console.log('User data:', userData); // Debug log
       
       setUser(userData);
@@ -86,6 +99,8 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     setError(null);
   };
 

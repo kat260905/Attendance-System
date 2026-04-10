@@ -71,6 +71,19 @@ class SocketService {
     }
   }
 
+  // Notification listeners for real-time updates
+  onNotificationsUpdated(callback) {
+    if (this.socket) {
+      this.socket.on('notifications_updated', callback);
+    }
+  }
+
+  offNotificationsUpdated(callback) {
+    if (this.socket) {
+      this.socket.off('notifications_updated', callback);
+    }
+  }
+
   // Join room for specific session
   joinSession(sessionId) {
     if (this.socket && this.isConnected) {

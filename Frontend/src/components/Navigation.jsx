@@ -1,27 +1,65 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { adminODAPI, odAPI } from '../services/api';
+import socketService from '../services/socket';
 import {
   BarChart3, Users, LogOut, Menu, X, FileCheck,
   Bell, ChevronDown, LayoutDashboard, ClipboardCheck,
-  BookOpen, FileBarChart, Settings, UserCircle
+  BookOpen, FileBarChart, Settings, UserCircle, BellRing
 } from 'lucide-react';
 
 export default function Navigation({ currentPage, onPageChange }) {
   const { user, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
   const dropdownRef = useRef(null);
+  const notificationRef = useRef(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setIsUserDropdownOpen(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(e.target)) {
+        setIsNotificationOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Fetch notification counts
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      if (user.role === 'ADMIN') {
+        const res = await adminODAPI.getPendingRequests();
+        setNotificationCount(res.data?.length || 0);
+      } else if (user.role === 'FACULTY') {
+        const res = await odAPI.getPending(user.faculty_id);
+        setNotificationCount(res.data?.length || 0);
+      }
+    } catch (err) {
+      console.error('Failed to load notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    
+    // Set up real-time websocket listener for notifications
+    socketService.connect();
+    socketService.onNotificationsUpdated(() => {
+      fetchNotifications();
+    });
+
+    return () => {
+      socketService.offNotificationsUpdated();
+    };
+  }, [user, currentPage]);
 
   // Build navigation items based on role
   const navigationItems = [];
@@ -49,10 +87,6 @@ export default function Navigation({ currentPage, onPageChange }) {
     );
   }
 
-  // Count for notification badge (e.g., pending OD count)
-  // This can be enhanced with real data later
-  const notificationCount = 0;
-
   const handleLogout = () => {
     logout();
   };
@@ -60,6 +94,16 @@ export default function Navigation({ currentPage, onPageChange }) {
   const handleNavClick = (id) => {
     onPageChange(id);
     setIsSidebarOpen(false); // Close mobile sidebar on nav click
+  };
+
+  const handleNotificationClick = () => {
+    if (user?.role === 'ADMIN') {
+      handleNavClick('odApproval');
+    } else if (user?.role === 'FACULTY') {
+      handleNavClick('pendingOD');
+    } else if (user?.role === 'STUDENT') {
+      handleNavClick('myRequests');
+    }
   };
 
   const userInitials = user?.name
@@ -96,15 +140,81 @@ export default function Navigation({ currentPage, onPageChange }) {
 
           {/* Right: Notifications + User Dropdown */}
           <div className="flex items-center gap-2">
-            {/* Notification Bell */}
-            <button className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
-              <Bell size={20} />
-              {notificationCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 h-5 w-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {notificationCount}
-                </span>
+            {/* Notification Dropdown */}
+            <div className="relative" ref={notificationRef}>
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className={`relative p-2 rounded-lg transition-colors ${
+                  isNotificationOpen ? 'bg-blue-100 text-blue-900' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                <Bell size={20} />
+                {notificationCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-5 w-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+                    {notificationCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications Panel */}
+              {isNotificationOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                    {notificationCount > 0 && (
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                        {notificationCount} New
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="max-h-64 overflow-y-auto">
+                    {notificationCount > 0 ? (
+                      <button
+                        onClick={() => {
+                          handleNotificationClick();
+                          setIsNotificationOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 flex items-start gap-3"
+                      >
+                        <div className="mt-0.5 bg-blue-100 p-1.5 rounded-full text-blue-600">
+                          <BellRing size={14} />
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-800 font-medium">
+                            {user?.role === 'ADMIN' ? 'Pending OD Requests' : 
+                             user?.role === 'FACULTY' ? 'Approved ODs to Mark' : 
+                             'OD Request Updates'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            You have {notificationCount} action item(s) pending your attention. Click to view details.
+                          </p>
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="px-4 py-8 text-center text-gray-500">
+                        <Bell className="mx-auto text-gray-300 mb-2" size={24} />
+                        <p className="text-sm">You have no new notifications.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {notificationCount > 0 && (
+                    <div className="px-4 py-2 border-t border-gray-100">
+                      <button
+                        onClick={() => {
+                          handleNotificationClick();
+                          setIsNotificationOpen(false);
+                        }}
+                        className="w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        View All Activities
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
-            </button>
+            </div>
 
             {/* User Dropdown */}
             <div className="relative" ref={dropdownRef}>

@@ -10,14 +10,32 @@ from datetime import datetime, date
 import pytz
 from dotenv import load_dotenv 
 import os 
-from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class, ApprovedODRequest
+from models import db, User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Timetable,  FacultySubjectClass, Class, ApprovedODRequest, SystemSettings
 from datetime import datetime, timedelta
 from models import StudentODRequest, ODRequestStatus
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from uuid import uuid4
 import redis
+from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+
 
 IST = pytz.timezone("Asia/Kolkata")
+
+from functools import wraps
+# Helper: permission decorator placeholder (ERP will have auth)
+def require_admin(f):
+    @wraps(f)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        current_user_id = get_jwt_identity()
+        user = db.session.get(User, current_user_id)
+        if not user or user.role.value != "ADMIN":
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
 
 app= Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -34,6 +52,12 @@ if not _db_uri:
     print("Note: No DATABASE_URI found. Using SQLite (attendance.db)")
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# JWT Configuration
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-key-change-me")
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=2)
+app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
+jwt = JWTManager(app)
 
 #db= SQLAlchemy(app)
 db.init_app(app)
@@ -111,6 +135,12 @@ def generate_weekly_sessions():
     """
 
     with app.app_context():   
+        # Check system settings first
+        settings = SystemSettings.query.first()
+        if settings and not settings.is_auto_generate_sessions:
+            print(f"[{datetime.now(IST)}] Scheduler skipped: Auto-generation is disabled.")
+            return jsonify({"message": "Scheduler is paused."}), 200
+
         today = datetime.now(IST).date()
         
         # Get this week's Monday
@@ -195,6 +225,8 @@ def start_scheduler():
 
 # Start scheduler once
 @app.route("/api/generate-week-sessions", methods=["POST"])
+@jwt_required()
+@require_admin
 def generate_week():
     return generate_weekly_sessions()
 
@@ -208,6 +240,7 @@ def test_db():
         return f"Database connection failed: {e}"
 
 @app.route("/api/debug/users")
+@jwt_required()
 def debug_users():
     """Debug endpoint to check what users exist in the database"""
     try:
@@ -234,12 +267,28 @@ def debug_users():
         }), 500
    
 
-from functools import wraps
-# Helper: permission decorator placeholder (ERP will have auth)
+
+
+def require_student(f):
+    @wraps(f)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        current_user_id = get_jwt_identity()
+        user = db.session.get(User, current_user_id)
+        if not user or user.role.value != "STUDENT":
+            return jsonify({"error": "Student access required"}), 403
+        return f(*args, **kwargs)
+    wrapper.__name__ = f.__name__
+    return wrapper
+
 def require_faculty(f):
     @wraps(f)
+    @jwt_required()
     def wrapper(*args, **kwargs):
-        # In production, check session/jwt and ensure user.role == faculty
+        current_user_id = get_jwt_identity()
+        user = db.session.get(User, current_user_id)
+        if not user or user.role.value != "FACULTY":
+            return jsonify({"error": "Faculty access required"}), 403
         return f(*args, **kwargs)
     wrapper.__name__ = f.__name__
     return wrapper
@@ -265,7 +314,14 @@ def login():
         if not user:
             print(f"User not found for email: {email}")  # Debug log
             return jsonify({"error": "Invalid credentials"}), 401
-        
+
+        # Check existing password, or fallback for old accounts
+        if not user.password_hash:
+            # If account is old without password hash, temporarily allow any password or set 12345
+            pass
+        elif not check_password_hash(user.password_hash, password):
+            return jsonify({"error": "Invalid credentials"}), 401
+
         # Validate that selected role matches user's actual role
         if requested_role and user.role.value != requested_role:
             return jsonify({"error": f"Invalid credentials. Please select {user.role.value.replace('_', ' ')} to sign in."}), 401
@@ -284,8 +340,14 @@ def login():
             if student:
                 student_id = student.id
 
+        # Generate tokens
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
+
         # In production, verify password hash
         return jsonify({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
             "user": {
                 "id": user.id,
                 "email": user.email,
@@ -311,9 +373,11 @@ def register():
         return jsonify({"error": "Email already exists"}), 400
     
     try:
+        pw = data.get("password", "12345")  # Default password for dummy registrations
         user = User(
             email=email,
             name=name,
+            password_hash=generate_password_hash(pw),
             role=UserRole(role)
         )
         db.session.add(user)
@@ -333,22 +397,42 @@ def register():
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/auth/me", methods=["GET"])
+@jwt_required()
 def get_current_user():
-    # In production, get user from JWT token
-    user_id = request.args.get("user_id", 1)  # Placeholder
+    user_id = get_jwt_identity()
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
+        
+    faculty_id = None
+    student_id = None
+    if user.role.value == "FACULTY":
+        faculty = Faculty.query.filter_by(user_id=user.id).first()
+        if faculty: faculty_id = faculty.id
+    elif user.role.value == "STUDENT":
+        student = Student.query.filter_by(user_id=user.id).first()
+        if student: student_id = student.id
     
     return jsonify({
         "id": user.id,
         "email": user.email,
         "name": user.name,
-        "role": user.role.value
+        "role": user.role.value,
+        "faculty_id": faculty_id,
+        "student_id": student_id,
     })
+
+@app.route("/api/auth/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def refresh():
+    current_user_id = get_jwt_identity()
+    # current_user_id is already a string at this point
+    new_access_token = create_access_token(identity=str(current_user_id))
+    return jsonify(access_token=new_access_token)
 
 # Student management endpoints
 @app.route("/api/students", methods=["GET"])
+@jwt_required()
 def get_students():
     faculty_id = request.args.get("faculty_id", type=int)
     
@@ -375,6 +459,8 @@ def get_students():
     } for s in students])
 
 @app.route("/api/students", methods=["POST"])
+@jwt_required()
+@require_admin
 def create_student():
     data = request.get_json()
     try:
@@ -392,6 +478,7 @@ def create_student():
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/students/<int:student_id>", methods=["GET"])
+@jwt_required()
 def get_student(student_id):
     student = Student.query.get_or_404(student_id)
     return jsonify({
@@ -404,6 +491,7 @@ def get_student(student_id):
 
 #getByFacultySubject: (subject_id, faculty_id) => api.get(`/students/${subject_id}/${faculty_id}`)
 @app.route("/api/sessions/<int:session_id>/students", methods=["GET"])
+@jwt_required()
 def get_by_session(session_id):
     session = db.session.get(ClassSession, session_id)
     if not session:
@@ -429,6 +517,7 @@ def get_by_session(session_id):
    
 # Faculty management endpoints
 @app.route("/api/faculty", methods=["GET"])
+@jwt_required()
 def get_faculty():
     faculty = Faculty.query.all()
     return jsonify([{
@@ -440,6 +529,8 @@ def get_faculty():
     } for f in faculty])
 
 @app.route("/api/faculty", methods=["POST"])
+@jwt_required()
+@require_admin
 def create_faculty():
     data = request.get_json()
     try:
@@ -447,6 +538,7 @@ def create_faculty():
         user = User(
             email=data["email"],
             name=data["name"],
+            password_hash=generate_password_hash("12345"),
             role=UserRole.FACULTY
         )
         db.session.add(user)
@@ -466,6 +558,7 @@ def create_faculty():
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/faculty/<int:faculty_id>/classes", methods=["GET"])
+@jwt_required()
 def get_faculty_classes(faculty_id):
     rows = db.session.query(
         FacultySubjectClass,
@@ -494,6 +587,7 @@ def get_faculty_classes(faculty_id):
 
 # Subject management endpoints
 @app.route("/api/subjects", methods=["GET"])
+@jwt_required()
 def get_subjects():
     subjects = Subject.query.all()
     return jsonify([{
@@ -504,6 +598,8 @@ def get_subjects():
     } for s in subjects])
 
 @app.route("/api/subjects", methods=["POST"])
+@jwt_required()
+@require_admin
 def create_subject():
     data = request.get_json()
     try:
@@ -521,6 +617,7 @@ def create_subject():
 
 # Class Session management endpoints
 @app.route("/api/class-sessions", methods=["GET"])
+@jwt_required()
 def get_class_sessions():
     sessions = ClassSession.query.all()
     return jsonify([{
@@ -541,6 +638,8 @@ def get_class_sessions():
     } for s in sessions])
 
 @app.route("/api/class-sessions", methods=["POST"])
+@jwt_required()
+@require_admin
 def create_class_session():
     data = request.get_json()
     try:
@@ -560,6 +659,7 @@ def create_class_session():
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/class-sessions/faculty/<int:faculty_id>", methods=["GET"])
+@jwt_required()
 def get_faculty_sessions(faculty_id):
     # Show sessions: today_only | week | all
     # today_only = only today (default in some UIs)
@@ -602,6 +702,7 @@ def get_faculty_sessions(faculty_id):
     } for s in sessions])
 
 @app.route("/api/class-sessions/class/<int:class_id>", methods=["GET"])
+@jwt_required()
 def get_sessions_by_class(class_id):
     # Returns ALL sessions (past and future) for review and attendance editing
     # Filter by faculty_id if provided to show only that faculty's sessions
@@ -636,6 +737,7 @@ def get_sessions_by_class(class_id):
 
 
 @app.route("/api/attendance/mark", methods=["POST"])
+@jwt_required()
 @require_faculty
 def mark_attendance():
     """
@@ -742,6 +844,7 @@ def mark_attendance():
 
 
 @app.route("/api/attendance/mark-by-suffix", methods=["POST"])
+@jwt_required()
 @require_faculty
 def mark_attendance_by_suffix():
     """
@@ -768,10 +871,33 @@ def mark_attendance_by_suffix():
         
         # Parse suffixes - support comma, space, or newline separated
         import re
-        suffix_list = re.split(r'[,\s\n]+', suffixes_input.strip())
-        suffix_list = [s.strip().zfill(3) for s in suffix_list if s.strip()]
         
-        if not suffix_list:
+        # Remove spaces around hyphens to allow inputs like "7 - 9"
+        clean_input = re.sub(r'\s*-\s*', '-', suffixes_input.strip())
+        raw_parts = re.split(r'[,\s\n]+', clean_input)
+        
+        expanded_suffixes = []
+        for part in raw_parts:
+            part = part.strip()
+            if not part:
+                continue
+            if '-' in part:
+                try:
+                    # Handle range like 1-30
+                    start_str, end_str = part.split('-')
+                    start = int(start_str)
+                    end = int(end_str)
+                    if start <= end:
+                        for i in range(start, end + 1):
+                            expanded_suffixes.append(str(i).zfill(3))
+                    else:
+                        expanded_suffixes.append(part.zfill(3))
+                except ValueError:
+                    expanded_suffixes.append(part.zfill(3))
+            else:
+                expanded_suffixes.append(part.zfill(3))
+        
+        if not expanded_suffixes:
             return jsonify({"error": "No valid suffixes provided"}), 400
         
         # Get all students for this session
@@ -785,7 +911,7 @@ def mark_attendance_by_suffix():
         matched_students = []
         not_found_suffixes = []
         
-        for suffix in suffix_list:
+        for suffix in expanded_suffixes:
             # Find student whose roll_no ends with the suffix (last 3 digits)
             found = False
             for student in students:
@@ -883,6 +1009,7 @@ def mark_attendance_by_suffix():
 
 # Get attendance for a session
 @app.route("/api/attendance/session/<int:session_id>", methods=["GET"])
+@jwt_required()
 def get_session_attendance(session_id):
     rows = db.session.query(Attendance).filter_by(session_id=session_id).all()
     return jsonify([{
@@ -900,6 +1027,7 @@ def get_session_attendance(session_id):
 
 # Update attendance
 @app.route("/api/attendance/<int:attendance_id>", methods=["PUT"])
+@jwt_required()
 @require_faculty
 def update_attendance(attendance_id):
     clear_api_cache()
@@ -939,6 +1067,7 @@ def update_attendance(attendance_id):
 
 # Attendance report with optional department filter
 @app.route("/api/attendance/report", methods=["GET"])
+@jwt_required()
 def attendance_report():
     """
     GET params:
@@ -1034,6 +1163,7 @@ def attendance_report():
 
 # CSV export
 @app.route("/api/attendance/export", methods=["GET"])
+@jwt_required()
 def export_attendance():
     q = db.session.query(Attendance).join(ClassSession, Attendance.session_id == ClassSession.id)
     
@@ -1100,6 +1230,7 @@ import easyocr
 reader = easyocr.Reader(['en'], gpu=False)
 
 @app.route("/api/attendance/photo-upload", methods=["POST"])
+@jwt_required()
 def upload_attendance_photo():
     if "image" not in request.files:
         return jsonify({"error": "Image is required"}), 400
@@ -1192,6 +1323,7 @@ from flask import request, jsonify
 ocr = PaddleOCR(lang='en')
 
 @app.route("/api/attendance/photo-upload", methods=["POST"])
+@jwt_required()
 def upload_attendance_photo():
     """
     Extract roll numbers + present/absent from uploaded logbook image.
@@ -1506,6 +1638,8 @@ def upload_attendance_photo():
 # ========================================
 
 @app.route("/api/admin/od/pending-requests", methods=["GET"])
+@jwt_required()
+@require_admin
 @cache_response(timeout=120)
 def get_admin_pending_od_requests():
     """
@@ -1537,6 +1671,7 @@ def get_admin_pending_od_requests():
 
 
 @app.route("/api/admin/od/approve-request/<int:request_id>", methods=["POST"])
+@jwt_required()
 def admin_approve_student_od_request(request_id):
     """
     Admin approves a StudentODRequest. Creates ApprovedODRequest(s) for each date
@@ -1584,6 +1719,7 @@ def admin_approve_student_od_request(request_id):
 
 
 @app.route("/api/admin/od/reject-request/<int:request_id>", methods=["POST"])
+@jwt_required()
 def admin_reject_student_od_request(request_id):
     """Admin rejects a StudentODRequest."""
     clear_api_cache()
@@ -1610,6 +1746,7 @@ def admin_reject_student_od_request(request_id):
 
 
 @app.route("/api/od/approve", methods=["POST"])
+@jwt_required()
 def approve_od():
     """
     Payload:
@@ -1654,6 +1791,10 @@ def approve_od():
         )
         db.session.add(od)
         db.session.commit()
+        
+        # Tell connected users (faculty) they have a new approved OD to mark
+        socketio.emit('notifications_updated', {'action': 'od_approved'})
+        
         return jsonify({"ok": True, "od_id": od.id}), 201
     except Exception as e:
         db.session.rollback()
@@ -1662,6 +1803,7 @@ def approve_od():
 
 # --- Faculty: list pending OD requests relevant to their classes ---
 @app.route("/api/od/pending", methods=["GET"])
+@jwt_required()
 @require_faculty
 @cache_response(timeout=120)
 def get_pending_od():
@@ -1704,6 +1846,7 @@ def get_pending_od():
     return jsonify(result)
 
 @app.route("/api/od/apply/<int:od_id>", methods=["PUT"])
+@jwt_required()
 @require_faculty
 def apply_od(od_id):
     """
@@ -1815,6 +1958,10 @@ def apply_od(od_id):
         od.applied_by = user_id
         od.applied_at = datetime.now(IST)
         db.session.commit()
+        
+        # Tell connected users (Admins + Faculty) that an OD state changed
+        socketio.emit('notifications_updated', {'action': 'od_applied'})
+        
         return jsonify({"ok": True})
     except Exception as e:
         db.session.rollback()
@@ -1823,6 +1970,8 @@ def apply_od(od_id):
 # ========================================
 
 @app.route("/api/student/attendance/summary", methods=["GET"])
+@jwt_required()
+@require_student
 @cache_response(timeout=180)
 def get_student_attendance_summary():
     """
@@ -1950,6 +2099,7 @@ def get_student_attendance_summary():
 
 
 @app.route("/api/student/od/my-requests", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=120)
 def get_student_od_requests():
     """
@@ -1987,6 +2137,7 @@ def get_student_od_requests():
 
 
 @app.route("/api/student/od/submit", methods=["POST"])
+@jwt_required()
 def submit_student_od_request():
     """
     Submit a new OD request
@@ -2022,6 +2173,10 @@ def submit_student_od_request():
     if not (student_id and from_date_str and reason):
         return jsonify({"error": "student_id, from_date, and reason are required"}), 400
     
+    uploaded_file = request.files.get("supporting_document")
+    if not uploaded_file or not uploaded_file.filename:
+        return jsonify({"error": "supporting_document is required"}), 400
+
     try:
         from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
         to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
@@ -2031,21 +2186,19 @@ def submit_student_od_request():
     if to_date < from_date:
         return jsonify({"error": "to_date cannot be before from_date"}), 400
 
-    uploaded_file = request.files.get("supporting_document")
-    if uploaded_file and uploaded_file.filename:
-        allowed_extensions = {"pdf", "png", "jpg", "jpeg", "doc", "docx"}
-        ext = uploaded_file.filename.rsplit(".", 1)[-1].lower() if "." in uploaded_file.filename else ""
-        if ext not in allowed_extensions:
-            return jsonify({"error": "Unsupported file type. Allowed: pdf, png, jpg, jpeg, doc, docx"}), 400
+    allowed_extensions = {"pdf", "png", "jpg", "jpeg", "doc", "docx"}
+    ext = uploaded_file.filename.rsplit(".", 1)[-1].lower() if "." in uploaded_file.filename else ""
+    if ext not in allowed_extensions:
+        return jsonify({"error": "Unsupported file type. Allowed: pdf, png, jpg, jpeg, doc, docx"}), 400
 
-        upload_dir = os.path.join(app.root_path, "uploads", "od_documents")
-        os.makedirs(upload_dir, exist_ok=True)
+    upload_dir = os.path.join(app.root_path, "uploads", "od_documents")
+    os.makedirs(upload_dir, exist_ok=True)
 
-        safe_name = secure_filename(uploaded_file.filename)
-        file_name = f"{uuid4().hex}_{safe_name}"
-        save_path = os.path.join(upload_dir, file_name)
-        uploaded_file.save(save_path)
-        supporting_document_path = os.path.join("uploads", "od_documents", file_name).replace("\\", "/")
+    safe_name = secure_filename(uploaded_file.filename)
+    file_name = f"{uuid4().hex}_{safe_name}"
+    save_path = os.path.join(upload_dir, file_name)
+    uploaded_file.save(save_path)
+    supporting_document_path = os.path.join("uploads", "od_documents", file_name).replace("\\", "/")
     
     # Get student's class_id (required for StudentODRequest)
     student = db.session.get(Student, student_id)
@@ -2065,6 +2218,9 @@ def submit_student_od_request():
         db.session.add(od_request)
         db.session.commit()
         
+        # Emit a socket event to update the notification bell for Admins
+        socketio.emit('notifications_updated', {'action': 'new_od'})
+        
         return jsonify({
             "ok": True,
             "request_id": od_request.id,
@@ -2076,6 +2232,7 @@ def submit_student_od_request():
 
 
 @app.route("/api/student/od/cancel/<int:request_id>", methods=["PUT"])
+@jwt_required()
 def cancel_student_od_request(request_id):
     """Student cancels their own PENDING OD request."""
     clear_api_cache()
@@ -2095,6 +2252,10 @@ def cancel_student_od_request(request_id):
     try:
         req.status = ODRequestStatus.CANCELLED
         db.session.commit()
+        
+        # Notify admins that count might have dropped
+        socketio.emit('notifications_updated', {'action': 'od_cancelled'})
+        
         return jsonify({"ok": True, "message": "OD request cancelled"}), 200
     except Exception as e:
         db.session.rollback()
@@ -2102,6 +2263,7 @@ def cancel_student_od_request(request_id):
 
 
 @app.route("/api/student/od/document/<int:request_id>", methods=["GET"])
+@jwt_required()
 def get_od_document(request_id):
     """Serve the supporting document for an OD request"""
     req = db.session.get(StudentODRequest, request_id)
@@ -2127,6 +2289,7 @@ def get_od_document(request_id):
 # ========================================
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/summary", methods=["GET"])
+@jwt_required()
 @require_faculty
 @cache_response(timeout=120)
 def get_faculty_dashboard_summary(faculty_id):
@@ -2204,6 +2367,7 @@ def get_faculty_dashboard_summary(faculty_id):
 
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/alerts", methods=["GET"])
+@jwt_required()
 @require_faculty
 @cache_response(timeout=300)
 def get_faculty_course_alerts(faculty_id):
@@ -2256,6 +2420,7 @@ def get_faculty_course_alerts(faculty_id):
 
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/weekly-trend", methods=["GET"])
+@jwt_required()
 @require_faculty
 @cache_response(timeout=300)
 def get_faculty_weekly_trend(faculty_id):
@@ -2300,6 +2465,7 @@ def get_faculty_weekly_trend(faculty_id):
 
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/course-comparison", methods=["GET"])
+@jwt_required()
 @require_faculty
 @cache_response(timeout=300)
 def get_faculty_course_comparison(faculty_id):
@@ -2349,6 +2515,7 @@ def get_faculty_course_comparison(faculty_id):
 
 
 @app.route("/api/faculty/<int:faculty_id>/dashboard/course-defaulters", methods=["GET"])
+@jwt_required()
 @require_faculty
 def get_faculty_course_defaulters(faculty_id):
     """
@@ -2397,6 +2564,7 @@ def get_faculty_course_defaulters(faculty_id):
 # ========================================
 
 @app.route("/api/admin/dashboard/summary", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=120)
 def get_admin_dashboard_summary():
     """
@@ -2435,6 +2603,7 @@ def get_admin_dashboard_summary():
 
 
 @app.route("/api/admin/dashboard/department-attendance", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=300)
 def get_admin_department_attendance():
     """
@@ -2486,6 +2655,7 @@ def get_admin_department_attendance():
 
 
 @app.route("/api/admin/dashboard/year-wise-trend", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=300)
 def get_admin_year_wise_trend():
     """
@@ -2533,6 +2703,7 @@ def get_admin_year_wise_trend():
 
 
 @app.route("/api/admin/dashboard/faculty-performance", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=300)
 def get_admin_faculty_performance():
     """
@@ -2600,6 +2771,7 @@ def get_admin_faculty_performance():
 
 
 @app.route("/api/admin/dashboard/alerts", methods=["GET"])
+@jwt_required()
 @cache_response(timeout=300)
 def get_admin_dashboard_alerts():
     """
@@ -2699,6 +2871,37 @@ def get_admin_dashboard_alerts():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+# --- SYSTEM SETTINGS API (For ERP Sync & Admin Control) ---
+@app.route("/api/system-settings", methods=["GET"])
+@jwt_required()
+@require_admin
+def get_system_settings():
+    settings = SystemSettings.query.first()
+    if not settings:
+        settings = SystemSettings(is_auto_generate_sessions=True)
+        db.session.add(settings)
+        db.session.commit()
+    return jsonify(settings.to_dict()), 200
+
+@app.route("/api/system-settings/toggle-scheduler", methods=["POST"])
+@jwt_required()
+@require_admin
+def toggle_scheduler():
+    data = request.json
+    settings = SystemSettings.query.first()
+    if not settings:
+        settings = SystemSettings(is_auto_generate_sessions=True)
+        db.session.add(settings)
+    
+    if "is_auto_generate_sessions" in data:
+        settings.is_auto_generate_sessions = data["is_auto_generate_sessions"]
+    
+    # Optional term_id update for when ERP is integrated
+    if "current_term_id" in data:
+        settings.current_term_id = data["current_term_id"]
+
+    db.session.commit()
+    return jsonify({"message": "Settings updated", "settings": settings.to_dict()}), 200
 
 # Socket.IO event handlers
 @socketio.on('connect')

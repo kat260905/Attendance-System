@@ -8,6 +8,7 @@
 # from models import User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole
 # from datetime import datetime, date, time
 # import os
+from werkzeug.security import generate_password_hash
 
 # def init_database():
 #     """Initialize database with tables and sample data"""
@@ -195,6 +196,7 @@ from app import app, db, socketio
 from models import User, Student, Faculty, Subject, ClassSession, Attendance, AttendanceLog, AttendanceStatus, UserRole, Class, FacultySubjectClass
 from datetime import datetime, date, time
 import os
+from werkzeug.security import generate_password_hash
 
 def ensure_demo_student_account():
     """Ensure student@college.edu exists - for DBs that were initialized before this was added."""
@@ -248,10 +250,10 @@ def init_database():
         
         # Create sample users (admin + faculty)
         users_data = [
-            {"email": "admin@college.edu", "name": "Admin User", "role": UserRole.ADMIN},
-            {"email": "john.doe@college.edu", "name": "Dr. John Doe", "role": UserRole.FACULTY},
-            {"email": "jane.smith@college.edu", "name": "Prof. Jane Smith", "role": UserRole.FACULTY},
-            {"email": "mike.wilson@college.edu", "name": "Dr. Mike Wilson", "role": UserRole.FACULTY},
+            {"email": "admin@college.edu", "name": "Admin User", "role": UserRole.ADMIN, "password_hash": generate_password_hash("12345")},
+            {"email": "john.doe@college.edu", "name": "Dr. John Doe", "role": UserRole.FACULTY, "password_hash": generate_password_hash("12345")},
+            {"email": "jane.smith@college.edu", "name": "Prof. Jane Smith", "role": UserRole.FACULTY, "password_hash": generate_password_hash("12345")},
+            {"email": "mike.wilson@college.edu", "name": "Dr. Mike Wilson", "role": UserRole.FACULTY, "password_hash": generate_password_hash("12345")},
         ]
         
         users = []
@@ -401,6 +403,7 @@ def init_database():
             user = User(
                 email=email,
                 name=student.name,
+                password_hash=generate_password_hash("12345"),
                 role=UserRole.STUDENT
             )
             db.session.add(user)

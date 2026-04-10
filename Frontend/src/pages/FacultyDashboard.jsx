@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { facultyAPI } from '../services/api';
-import { Calendar, TrendingUp, AlertTriangle, Clock, RefreshCw, ChevronRight, X } from 'lucide-react';
+import { Calendar, TrendingUp, AlertTriangle, Clock, ChevronRight, X } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
@@ -72,13 +72,6 @@ export default function FacultyDashboard() {
               <h1 className="text-3xl font-bold text-gray-900">Faculty Dashboard</h1>
               <p className="text-gray-600 mt-2">Course-level monitoring & analytics</p>
             </div>
-            <button
-              onClick={loadDashboardData}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <RefreshCw size={18} />
-              Refresh
-            </button>
           </div>
         </div>
 

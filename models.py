@@ -14,6 +14,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False)
     name = db.Column(db.String(200), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=True)
     role = db.Column(db.Enum(UserRole), nullable=False)
     
     __table_args__ = (
@@ -284,3 +285,17 @@ class ApprovedODRequest(db.Model):
         db.Index('idx_od_class_date', 'class_id', 'date'),
         db.Index('idx_od_student_request', 'student_request_id'),  # NEW
     )
+
+class SystemSettings(db.Model):
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    is_auto_generate_sessions = db.Column(db.Boolean, default=True, nullable=False)
+    current_term_id = db.Column(db.String(50), nullable=True) # Placeholder for future ERP integration
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "is_auto_generate_sessions": self.is_auto_generate_sessions,
+            "current_term_id": self.current_term_id
+        }

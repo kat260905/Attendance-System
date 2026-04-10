@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { adminDashboardAPI } from '../services/api';
+import { adminDashboardAPI, systemSettingsAPI } from '../services/api';
 import {
     Users, GraduationCap, TrendingUp, Calendar, RefreshCw,
-    AlertTriangle, Clock, ShieldAlert, ChevronDown, ChevronUp
+    AlertTriangle, Clock, ShieldAlert, ChevronDown, ChevronUp,
+    Settings, Play, Pause // Added icons for settings
 } from 'lucide-react';
 import {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -19,6 +20,8 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true);
     const [expandedAlert, setExpandedAlert] = useState('unmarked');
     const [selectedDepartment, setSelectedDepartment] = useState('');
+    const [schedulerEnabled, setSchedulerEnabled] = useState(true);
+    const [togglingScheduler, setTogglingScheduler] = useState(false);
 
     useEffect(() => {
         loadDashboardData();
@@ -27,12 +30,13 @@ export default function AdminDashboard() {
     const loadDashboardData = async () => {
         setLoading(true);
         try {
-            const [summaryRes, deptRes, yearRes, facultyRes, alertsRes] = await Promise.all([
+            const [summaryRes, deptRes, yearRes, facultyRes, alertsRes, settingsRes] = await Promise.all([
                 adminDashboardAPI.getSummary(),
                 adminDashboardAPI.getDepartmentAttendance(),
                 adminDashboardAPI.getYearWiseTrend(),
                 adminDashboardAPI.getFacultyPerformance(),
-                adminDashboardAPI.getAlerts()
+                adminDashboardAPI.getAlerts(),
+                systemSettingsAPI.getSettings().catch(() => ({ data: { is_auto_generate_sessions: true } })) // graceful fallback
             ]);
 
             setSummary(summaryRes.data);
@@ -40,6 +44,9 @@ export default function AdminDashboard() {
             setYearTrend(yearRes.data);
             setFacultyPerformance(facultyRes.data);
             setAlerts(alertsRes.data);
+            if (settingsRes.data) {
+                setSchedulerEnabled(settingsRes.data.is_auto_generate_sessions);
+            }
 
             if (facultyRes.data?.length > 0) {
                 const depts = [...new Set(facultyRes.data.map(f => f.department).filter(Boolean))].sort();
@@ -49,6 +56,25 @@ export default function AdminDashboard() {
             console.error('Failed to load admin dashboard data:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleToggleScheduler = async () => {
+        try {
+            setTogglingScheduler(true);
+            const newState = !schedulerEnabled;
+            const res = await systemSettingsAPI.toggleScheduler({ is_auto_generate_sessions: newState });
+            if (res.data && res.data.settings) {
+                setSchedulerEnabled(res.data.settings.is_auto_generate_sessions);
+            } else {
+                // local fallback if api structure slightly differs
+                setSchedulerEnabled(newState);
+            }
+        } catch (error) {
+            console.error("Failed to toggle scheduler", error);
+            alert("Failed to toggle scheduler.");
+        } finally {
+            setTogglingScheduler(false);
         }
     };
 
@@ -105,13 +131,27 @@ export default function AdminDashboard() {
                             <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
                             <p className="text-gray-600 mt-2">Institutional analytics & monitoring</p>
                         </div>
-                        <button
-                            onClick={loadDashboardData}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                            <RefreshCw size={18} />
-                            Refresh
-                        </button>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={handleToggleScheduler}
+                                disabled={togglingScheduler}
+                                className={`inline-flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
+                                    schedulerEnabled 
+                                        ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" 
+                                        : "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                                }`}
+                                title={schedulerEnabled ? "Scheduler is currently generating weekly classes automatically." : "Scheduler is paused. Weekly classes are NOT being generated."}
+                            >
+                                {togglingScheduler ? (
+                                    <RefreshCw size={18} className="animate-spin" />
+                                ) : schedulerEnabled ? (
+                                    <Pause size={18} />
+                                ) : (
+                                    <Play size={18} />
+                                )}
+                                {schedulerEnabled ? "Pause Scheduler" : "Start Scheduler"}
+                            </button>
+                        </div>
                     </div>
                 </div>
 

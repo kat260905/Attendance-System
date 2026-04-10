@@ -4,9 +4,56 @@ const API_BASE_URL = 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  // Don't set Content-Type header here - let Axios auto-detect
-  // JSON requests: Axios will use application/json
-  // FormData requests: Axios will use multipart/form-data with boundary
+});
+
+// Request interceptor to add the JWT token to headers
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+// Response interceptor to handle token refresh & unauthorized errors
+api.interceptors.response.use((response) => {
+  return response;
+}, async (error) => {
+  const originalRequest = error.config;
+  
+  if (error.response && error.response.status === 401 && !originalRequest._retry) {
+    originalRequest._retry = true;
+    
+    // Check if the endpoint is not login/refresh to avoid infinite loops
+    if (originalRequest.url !== '/auth/login' && originalRequest.url !== '/auth/refresh') {
+      try {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (refreshToken) {
+          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, {
+            headers: {
+              Authorization: `Bearer ${refreshToken}`
+            }
+          });
+          
+          if (res.data && res.data.access_token) {
+            localStorage.setItem('access_token', res.data.access_token);
+            originalRequest.headers.Authorization = `Bearer ${res.data.access_token}`;
+            return api(originalRequest);
+          }
+        }
+      } catch (refreshError) {
+        // If refresh token fails, clear user data and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    }
+  }
+  
+  return Promise.reject(error);
 });
 
 // Auth endpoints
@@ -157,6 +204,9 @@ export const adminDashboardAPI = {
   getAlerts: () => api.get('/admin/dashboard/alerts'),
 };
 
-export default api;
-
+// System Settings API (ERP Sync Module Control)
+export const systemSettingsAPI = {
+  getSettings: () => api.get('/system-settings'),
+  toggleScheduler: (data) => api.post('/system-settings/toggle-scheduler', data),
+};
 
