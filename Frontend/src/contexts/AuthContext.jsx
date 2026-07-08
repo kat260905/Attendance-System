@@ -77,25 +77,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (userData) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await authAPI.register(userData);
-      const newUser = response.data.user;
-      
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      return { success: true, user: newUser };
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Registration failed';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
@@ -121,7 +102,6 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     login,
-    register,
     logout,
     isAuthenticated,
     isFaculty,

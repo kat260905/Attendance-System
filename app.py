@@ -38,7 +38,7 @@ def require_admin(f):
 
 
 app= Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"])
 
 load_dotenv()
 
@@ -62,7 +62,7 @@ jwt = JWTManager(app)
 #db= SQLAlchemy(app)
 db.init_app(app)
 migrate=Migrate(app, db)
-socketio= SocketIO(app, cors_allowed_origins="*")
+socketio= SocketIO(app, cors_allowed_origins=["http://localhost:5173", "http://localhost:3000"])
 
 import json
 from functools import wraps
@@ -233,6 +233,8 @@ def generate_week():
 
 @app.route("/test-db")
 def test_db():
+    if not app.debug:
+        return jsonify({"error": "Not available"}), 404
     try:
         result = db.session.execute(text("SELECT 1")).fetchall()
         return f"Database connection successful! Result: {result}"
@@ -242,6 +244,8 @@ def test_db():
 @app.route("/api/debug/users")
 @jwt_required()
 def debug_users():
+    if not app.debug:
+        return jsonify({"error": "Not available"}), 404
     """Debug endpoint to check what users exist in the database"""
     try:
         users = User.query.all()
@@ -315,11 +319,12 @@ def login():
             print(f"User not found for email: {email}")  # Debug log
             return jsonify({"error": "Invalid credentials"}), 401
 
-        # Check existing password, or fallback for old accounts
+        # Enforce hashed-password validation for all accounts.
+        if not password:
+            return jsonify({"error": "Password is required"}), 400
         if not user.password_hash:
-            # If account is old without password hash, temporarily allow any password or set 12345
-            pass
-        elif not check_password_hash(user.password_hash, password):
+            return jsonify({"error": "Account password is not initialized. Contact admin."}), 403
+        if not check_password_hash(user.password_hash, password):
             return jsonify({"error": "Invalid credentials"}), 401
 
         # Validate that selected role matches user's actual role
@@ -364,33 +369,61 @@ def login():
 
 @app.route("/api/auth/register", methods=["POST"])
 def register():
-    data = request.get_json()
-    email = data.get("email")
-    name = data.get("name")
-    role = data.get("role", "student")
-    
+    # Public self-signup is intentionally disabled.
+    return jsonify({"error": "Self-signup is disabled. Contact admin for account creation."}), 403
+
+@app.route("/api/admin/users/create", methods=["POST"])
+@jwt_required()
+@require_admin
+def create_user_login():
+    data = request.get_json() or {}
+
+    email = (data.get("email") or "").strip().lower()
+    name = (data.get("name") or "").strip()
+    role_str = (data.get("role") or "").strip().upper()
+    password = data.get("password")
+
+    if not email or not name or not role_str or not password:
+        return jsonify({"error": "email, name, role, and password are required"}), 400
+
+    if role_str not in {"ADMIN", "FACULTY", "STUDENT"}:
+        return jsonify({"error": "role must be one of ADMIN, FACULTY, STUDENT"}), 400
+
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already exists"}), 400
-    
+
     try:
-        pw = data.get("password", "12345")  # Default password for dummy registrations
         user = User(
             email=email,
             name=name,
-            password_hash=generate_password_hash(pw),
-            role=UserRole(role)
+            password_hash=generate_password_hash(password),
+            role=UserRole(role_str)
         )
         db.session.add(user)
+        db.session.flush()
+
+        if role_str == "FACULTY":
+            faculty = Faculty(user_id=user.id, department=data.get("department"))
+            db.session.add(faculty)
+
+        if role_str == "STUDENT":
+            student_id = data.get("student_id")
+            if student_id:
+                student = db.session.get(Student, int(student_id))
+                if not student:
+                    db.session.rollback()
+                    return jsonify({"error": "student_id not found"}), 404
+                student.user_id = user.id
+
         db.session.commit()
-        
         return jsonify({
+            "message": "User login created successfully",
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "name": user.name,
                 "role": user.role.value
-            },
-            "message": "Registration successful"
+            }
         }), 201
     except Exception as e:
         db.session.rollback()
@@ -1011,24 +1044,50 @@ def mark_attendance_by_suffix():
 @app.route("/api/attendance/session/<int:session_id>", methods=["GET"])
 @jwt_required()
 def get_session_attendance(session_id):
+    session = db.session.get(ClassSession, session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+        
+    students = Student.query.filter_by(class_id=session.class_id).all()
     rows = db.session.query(Attendance).filter_by(session_id=session_id).all()
-    return jsonify([{
-        "attendance_id": r.id,
-        "student_id": r.student_id,
-        "student_name": r.student.name,
-        "roll_no": r.student.roll_no,
-        "department": r.student.department,
-        "status": r.status.value,
-        "marked_by": r.marked_by,
-        "marked_at": r.marked_at.isoformat(),
-        "reason": r.reason
-    } for r in rows])
+    
+    # Create a lookup map for existing attendance records
+    att_map = {r.student_id: r for r in rows}
+    
+    results = []
+    for student in students:
+        if student.id in att_map:
+            r = att_map[student.id]
+            results.append({
+                "attendance_id": r.id,
+                "student_id": r.student_id,
+                "student_name": student.name,
+                "roll_no": student.roll_no,
+                "department": student.department,
+                "status": r.status.value,
+                "marked_by": r.marked_by,
+                "marked_at": r.marked_at.isoformat(),
+                "reason": r.reason
+            })
+        else:
+            results.append({
+                "attendance_id": None,
+                "student_id": student.id,
+                "student_name": student.name,
+                "roll_no": student.roll_no,
+                "department": student.department,
+                "status": "absent",
+                "marked_by": None,
+                "marked_at": None,
+                "reason": None
+            })
+            
+    return jsonify(results)
 
 
 # Update attendance
 @app.route("/api/attendance/<int:attendance_id>", methods=["PUT"])
 @jwt_required()
-@require_faculty
 def update_attendance(attendance_id):
     clear_api_cache()
     data = request.get_json()
@@ -1660,7 +1719,9 @@ def get_admin_pending_od_requests():
             "student_name": student.name if student else None,
             "roll_no": student.roll_no if student else None,
             "class_id": req.class_id,
-            "class_info": f"{class_ref.department} Yr{class_ref.year} Sec {class_ref.section}" if class_ref else None,
+            "department": class_ref.department if class_ref else None,
+            "year": class_ref.year if class_ref else None,
+            "section": class_ref.section if class_ref else None,
             "from_date": req.from_date.isoformat(),
             "to_date": req.to_date.isoformat(),
             "reason": req.reason,
@@ -1698,7 +1759,7 @@ def admin_approve_student_od_request(request_id):
                 class_id=req.class_id,
                 session_id=None,
                 date=current_date,
-                reason=req.reason,
+                reason=req.reason[:500] if req.reason else None,
                 approved_by=admin_user_id,
                 approved_at=datetime.now(IST),
                 student_request_id=req.id
@@ -1834,6 +1895,10 @@ def get_pending_od():
             "id": p.id,
             "student_id": p.student_id,
             "student_name": p.student.name if p.student else None,
+            "roll_no": p.student.roll_no if p.student else None,
+            "department": p.student.class_rel.department if p.student and p.student.class_rel else None,
+            "year": p.student.class_rel.year if p.student and p.student.class_rel else None,
+            "section": p.student.class_rel.section if p.student and p.student.class_rel else None,
             "class_id": p.class_id,
             "session_id": p.session_id,
             "date": p.date.isoformat(),
@@ -2927,5 +2992,5 @@ def handle_leave_session(data):
 if __name__ == "__main__":
     # socketio.run(app, host="0.0.0.0", port=5000)
     start_scheduler()
-    socketio.run(app, host="127.0.0.1", port=5000, debug=True, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 

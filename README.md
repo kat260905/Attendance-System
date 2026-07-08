@@ -9,8 +9,8 @@ A comprehensive attendance management system built with Flask (Python) backend a
 - **📋 Faculty Attendance Marking**: Intuitive interface for marking student attendance in real-time
 - **🔢 Quick Mark by Register Number**: Fast attendance marking using last 3 digits of register numbers
 - **📊 Real-time Synchronization**: Live updates across multiple devices using Socket.IO
-- **📸 Photo Attendance**: Upload and associate class photos with attendance records
 - **🔍 Digital Record Keeping**: Complete attendance history with comprehensive audit logs
+- **📱 Mobile App**: Companion Flutter application for students to view their dashboard, attendance, and OD requests on the go
 
 ### Reporting & Analytics
 
@@ -59,6 +59,13 @@ A comprehensive attendance management system built with Flask (Python) backend a
 - **React Router v6**: Client-side routing
 - **Lucide Icons**: Beautiful, consistent icon library
 - **ESLint**: Code quality and style checking
+
+### Mobile App (Companion)
+
+- **Flutter**: UI toolkit for building natively compiled applications for mobile
+- **Provider**: State management
+- **FL Chart**: Highly customizable charting library for Flutter
+- **Flutter Secure Storage**: Encrypted local storage for authentication tokens
 
 ## 📋 Prerequisites
 
@@ -140,6 +147,30 @@ npm run dev
 ```
 
 Frontend application will be available at: **http://localhost:5173**
+
+### 4. Mobile App Setup (Optional)
+
+#### Navigate to Flutter Directory
+
+```bash
+cd FlutterApp
+```
+
+#### Install Dependencies
+
+```bash
+flutter pub get
+```
+
+#### Run the App
+
+Ensure you have a connected device or emulator running.
+
+```bash
+flutter run
+```
+
+*Note: Ensure your `api_service.dart` or `.env` configuration points to the correct backend IP address (use your machine's local IP, not `localhost`, if running on a physical device).*
 
 ## 📖 Usage Guide
 
@@ -413,7 +444,6 @@ attendance-zip/
 │   │   │   │   ├── LoadingSpinner.jsx     # Loading component
 │   │   │   │   ├── Login.jsx              # Login page
 │   │   │   │   ├── Navigation.jsx         # Navigation bar
-│   │   │   │   ├── PhotoAttendanceModal.jsx # Photo upload modal
 │   │   │   │   ├── StudentDashboard.jsx   # Student Dashboard view
 │   │   │   │   └── Toast.jsx              # Toast notifications
 │   │   │   │
@@ -441,6 +471,16 @@ attendance-zip/
 │   │   └── dist/                         # Production build output
 │   │
 │   └── uploads/                          # File uploads directory
+│
+├── FlutterApp/                # Flutter Mobile Application
+│   ├── lib/
+│   │   ├── models/            # Data models
+│   │   ├── providers/         # State management providers
+│   │   ├── screens/           # UI screens (e.g., student dashboard)
+│   │   ├── services/          # API and storage services
+│   │   ├── utils/             # Helper functions and constants
+│   │   └── main.dart          # App entry point
+│   └── pubspec.yaml           # Flutter dependencies
 │
 ├── README.md                  # This file
 └── .gitignore                 # Git ignore rules
@@ -716,7 +756,7 @@ For issues, questions, or suggestions:
 | ------- | ------------ | --------------------------------------------- |
 | 1.0.0   | 2026-02-12   | Initial release with core attendance features |
 | 1.1.0   | 2026-03-15   | OD management system & Student Dashboards     |
-| 1.2.0   | TBD          | Mobile app support                            |
+| 1.2.0   | 2026-05-15   | Mobile app support (Flutter companion app)    |
 | 2.0.0   | TBD          | Advanced analytics and reporting              |
 
 ## 📝 Credits

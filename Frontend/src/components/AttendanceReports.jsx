@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Select from "react-select";
 import { BarChart3, Download, Users, TrendingUp, FileText, UserCheck, UserX, UserSearch, Target } from 'lucide-react';
 import { attendanceAPI, studentAPI, classSessionAPI, facultyAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,6 +20,7 @@ export default function AttendanceReports() {
   const [loading, setLoading] = useState(false);
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
+  const departments = ["IT", "Computer Science", "ECE", "EEE", "Mechanical"];
 
   useEffect(() => {
     loadInitialData();
@@ -164,54 +166,81 @@ export default function AttendanceReports() {
           {!isAdmin() && classes.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Class</label>
-              <select
-                value={filters.class_id}
-                onChange={(e) => handleFilterChange('class_id', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-              >
-                <option value="">All Classes</option>
-                {classes.map(cls => (
-                  <option key={cls.class_id} value={cls.class_id}>
-                    {cls.department} - Year {cls.year} - Section {cls.section} ({cls.subject_name})
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={filters.class_id ? {
+                  value: filters.class_id,
+                  label:
+                    classes.find((c) => String(c.id ?? c.class_id ?? "") === String(filters.class_id))?.name ||
+                    classes.find((c) => String(c.id ?? c.class_id ?? "") === String(filters.class_id))?.subject_name ||
+                    filters.class_id,
+                } : null}
+                onChange={(opt) => handleFilterChange('class_id', opt ? opt.value : '')}
+                options={classes
+                  .filter((c) => (c.id ?? c.class_id) !== undefined && (c.id ?? c.class_id) !== null)
+                  .map((c) => ({
+                    value: String(c.id ?? c.class_id),
+                    label: c.name || c.subject_name || `Class ${c.id ?? c.class_id}`,
+                  }))}
+                isClearable
+                placeholder="All Classes"
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    minHeight: "42px",
+                    borderRadius: "0.5rem",
+                    borderColor: "#d1d5db"
+                  })
+                }}
+              />
             </div>
           )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Student</label>
-            <select
-              value={filters.student_id}
-              onChange={(e) => handleFilterChange('student_id', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-            >
-              <option value="">All Students</option>
-              {students.map(student => (
-                <option key={student.id} value={student.id}>
-                  {student.name} ({student.roll_no})
-                </option>
-              ))}
-            </select>
+            <Select
+                value={filters.student_id ? {
+                  value: filters.student_id,
+                  label: students.find((s) => String(s.id ?? "") === String(filters.student_id))?.name || filters.student_id,
+                } : null}
+                onChange={(opt) => handleFilterChange('student_id', opt ? opt.value : '')}
+                options={students
+                  .filter((s) => s.id !== undefined && s.id !== null)
+                  .map((s) => ({
+                    value: String(s.id),
+                    label: `${s.name || "Student"} (${s.registration_number || s.roll_no || "-"})`,
+                  }))}
+                isClearable
+                placeholder="All Students"
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    minHeight: "42px",
+                    borderRadius: "0.5rem",
+                    borderColor: "#d1d5db"
+                  })
+                }}
+              />
           </div>
 
           {/* Department filter - only visible to Admin */}
           {isAdmin() && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-            <select
-              value={filters.department}
-              onChange={(e) => handleFilterChange('department', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-            >
-              <option value="">All Departments</option>
-              <option value="IT">IT</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="ECE">ECE</option>
-              <option value="EEE">EEE</option>
-              <option value="Mechanical">Mechanical</option>
-              <option value="Civil">Civil</option>
-            </select>
+            <Select
+                value={filters.department ? { value: filters.department, label: filters.department } : null}
+                onChange={(opt) => handleFilterChange('department', opt ? opt.value : '')}
+                options={departments.map(d => ({ value: d, label: d }))}
+                isClearable
+                placeholder="All Departments"
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    minHeight: "42px",
+                    borderRadius: "0.5rem",
+                    borderColor: "#d1d5db"
+                  })
+                }}
+              />
           </div>
           )}
 
@@ -309,7 +338,7 @@ export default function AttendanceReports() {
           <div className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-sm transition-shadow md:col-span-1 col-span-2">
             <div className="flex items-center justify-between h-full">
               <div>
-                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500 flex items-center gap-1"><Target size={14} /> Overall</div>
+                <div className="text-xs uppercase tracking-wider font-semibold text-gray-500 flex items-center gap-1"> Overall</div>
                 <div className={`text-3xl font-extrabold ${getPercentageColor(getAttendancePercentage())}`}>
                   {getAttendancePercentage()}%
                 </div>

@@ -59,7 +59,6 @@ api.interceptors.response.use((response) => {
 // Auth endpoints
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
-  register: (userData) => api.post('/auth/register', userData),
   getCurrentUser: () => api.get('/auth/me'),
 };
 
@@ -157,8 +156,6 @@ export const studentODAPI = {
       params: { student_id: studentId }
     }),
 
-  // Cancel request - NOTE: This endpoint doesn't exist in backend yet
-  // Remove this or implement in backend
   cancelRequest: (requestId, studentId) =>
     api.put(`/student/od/cancel/${requestId}`, { student_id: studentId }),
 

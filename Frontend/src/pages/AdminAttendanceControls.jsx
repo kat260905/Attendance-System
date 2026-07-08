@@ -3,6 +3,10 @@ import { useAuth } from "../contexts/AuthContext";
 import { attendanceAPI, classSessionAPI } from "../services/api";
 import { Save } from "lucide-react";
 import Toast from "../components/Toast";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { format, parseISO } from "date-fns";
+import Select from "react-select";
 
 const FILTER_ORDER = [
   "academicYear",
@@ -290,122 +294,170 @@ export default function AdminAttendanceControls() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Academic Year</label>
-              <select
-                value={filters.academicYear}
-                onChange={(e) => handleFilterChange("academicYear", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {academicYearOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.academicYear ? { value: filters.academicYear, label: filters.academicYear } : null}
+                onChange={(opt) => handleFilterChange("academicYear", opt ? opt.value : "")}
+                options={academicYearOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
-              <select
-                value={filters.semester}
-                onChange={(e) => handleFilterChange("semester", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {semesterOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.semester ? { value: filters.semester, label: filters.semester } : null}
+                onChange={(opt) => handleFilterChange("semester", opt ? opt.value : "")}
+                options={semesterOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-              <select
-                value={filters.department}
-                onChange={(e) => handleFilterChange("department", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {departmentOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.department ? { value: filters.department, label: filters.department } : null}
+                onChange={(opt) => handleFilterChange("department", opt ? opt.value : "")}
+                options={departmentOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
-              <select
-                value={filters.section}
-                onChange={(e) => handleFilterChange("section", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {sectionOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.section ? { value: filters.section, label: filters.section } : null}
+                onChange={(opt) => handleFilterChange("section", opt ? opt.value : "")}
+                options={sectionOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Course</label>
-              <select
-                value={filters.course}
-                onChange={(e) => handleFilterChange("course", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {courseOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.course ? { value: filters.course, label: filters.course } : null}
+                onChange={(opt) => handleFilterChange("course", opt ? opt.value : "")}
+                options={courseOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-              <select
-                value={filters.date}
-                onChange={(e) => handleFilterChange("date", e.target.value)}
+              <DatePicker
+                selected={filters.date ? parseISO(filters.date) : null}
+                onChange={(date) => handleFilterChange("date", date ? format(date, "yyyy-MM-dd") : "")}
+                dateFormat="yyyy-MM-dd"
+                isClearable
+                placeholderText="Select a date..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
                 disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {dateOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+                includeDates={dateOptions.map(d => parseISO(d))}
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Hour</label>
-              <select
-                value={filters.hour}
-                onChange={(e) => handleFilterChange("hour", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions}
-              >
-                <option value="">All</option>
-                {hourOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <Select
+                value={filters.hour ? { value: filters.hour, label: filters.hour } : null}
+                onChange={(opt) => handleFilterChange("hour", opt ? opt.value : "")}
+                options={hourOptions.map(opt => ({ value: opt, label: opt }))}
+                isClearable
+                placeholder="All"
+                isDisabled={loadingSessions}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
 
             <div className="lg:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Session</label>
-              <select
-                value={selectedSessionId}
-                onChange={(e) => handleSessionSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent"
-                disabled={loadingSessions || sessionOptions.length === 0}
-              >
-                <option value="">Select a session...</option>
-                {sessionOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
+              <Select
+                value={sessionOptions.find(opt => opt.id === selectedSessionId) || null}
+                onChange={(opt) => handleSessionSelect(opt ? opt.id : "")}
+                options={sessionOptions.map(opt => ({ value: opt.id, label: opt.label, id: opt.id }))}
+                isClearable
+                placeholder="Select a session..."
+                isDisabled={loadingSessions || sessionOptions.length === 0}
+                styles={
+                  {
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "42px",
+                      borderRadius: "0.5rem",
+                      borderColor: "#d1d5db"
+                    })
+                  }
+                }
+              />
             </div>
           </div>
         </div>

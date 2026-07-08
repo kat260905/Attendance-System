@@ -16,8 +16,7 @@ export default function Login() {
     role: ''
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [isLogin, setIsLogin] = useState(true);
-  const { login, register, loading, error, setError } = useAuth();
+  const { login, loading, error, setError } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -40,20 +39,9 @@ export default function Login() {
       return;
     }
 
-    if (isLogin) {
-      const result = await login(formData);
-      if (result.success) {
-        navigate('/', { replace: true });
-      }
-    } else {
-      const result = await register({
-        ...formData,
-        name: formData.email.split('@')[0],
-        role: formData.role
-      });
-      if (result.success) {
-        navigate('/', { replace: true });
-      }
+    const result = await login(formData);
+    if (result.success) {
+      navigate('/', { replace: true });
     }
   };
 
@@ -62,10 +50,10 @@ export default function Login() {
       <div className="bg-white rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.15)] p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-800">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
+            Welcome Back
           </h1>
           <p className="text-gray-600 mt-1">
-            {isLogin ? 'Sign in to continue' : 'Create your account'}
+            Sign in to continue
           </p>
         </div>
 
@@ -146,41 +134,9 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-blue-800 text-white py-3 px-4 rounded-lg font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+            {loading ? 'Please wait...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError(null);
-            }}
-            className="text-blue-700 hover:text-blue-800 font-medium"
-          >
-            {/* {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'} */}
-          </button>
-        </div>
-
-        {/* <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
-          <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex justify-between items-center">
-              <span className="font-medium text-gray-700">Admin</span>
-              <span>admin@college.edu</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="font-medium text-gray-700">Faculty</span>
-              <span>john.doe@college.edu</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="font-medium text-gray-700">Student</span>
-              <span>student@college.edu</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Password: any (demo mode)</p>
-          </div>
-        </div> */}
       </div>
     </div>
   );

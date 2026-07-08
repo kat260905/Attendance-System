@@ -77,7 +77,7 @@ export default function Navigation({ currentPage, onPageChange }) {
       { id: 'attendance', label: 'Mark Attendance', icon: ClipboardCheck },
       { id: 'myClasses', label: 'My Classes', icon: BookOpen },
       { id: 'reports', label: 'Reports', icon: FileBarChart },
-      { id: 'pendingOD', label: 'Pending OD', icon: FileCheck }
+      { id: 'pendingOD', label: 'Sync ODs', icon: FileCheck }
     );
   } else if (user?.role === 'STUDENT') {
     navigationItems.push(
@@ -182,8 +182,8 @@ export default function Navigation({ currentPage, onPageChange }) {
                         </div>
                         <div>
                           <p className="text-sm text-gray-800 font-medium">
-                            {user?.role === 'ADMIN' ? 'Pending OD Requests' : 
-                             user?.role === 'FACULTY' ? 'Approved ODs to Mark' : 
+                              {user?.role === 'ADMIN' ? 'Review Student ODs' :
+                               user?.role === 'FACULTY' ? 'Sync Admin-Approved ODs' :
                              'OD Request Updates'}
                           </p>
                           <p className="text-xs text-gray-500 mt-0.5">

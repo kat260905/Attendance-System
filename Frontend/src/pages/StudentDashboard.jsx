@@ -12,6 +12,29 @@ import {
 import LoadingSpinner from '../components/LoadingSpinner';
 import Toast from '../components/Toast';
 
+const ExpandableReason = ({ text }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text && text.length > 120;
+
+  if (!isLong) {
+    return <p className="text-sm text-gray-700 mt-1">{text || "—"}</p>;
+  }
+
+  return (
+    <div className="mt-1">
+      <div className={`text-sm text-gray-700 ${expanded ? "" : "line-clamp-2"}`}>
+        {text}
+      </div>
+      <button 
+        onClick={() => setExpanded(!expanded)} 
+        className="text-blue-600 text-xs font-medium mt-1 hover:underline focus:outline-none"
+      >
+        {expanded ? "Show less" : "Read more"}
+      </button>
+    </div>
+  );
+};
+
 export default function StudentDashboard({ section = 'dashboard' }) {
     const { user } = useAuth();
     const studentId = user?.student_id || user?.id;
@@ -406,7 +429,7 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                         value={odForm.reason}
                                         onChange={(e) => setODForm({ ...odForm, reason: e.target.value })}
                                         required
-                                        rows={4}
+                                        rows={8}
                                         placeholder="Please provide a detailed reason for your OD request..."
                                         maxLength={1000}
                                         className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none transition-shadow"
@@ -513,7 +536,7 @@ export default function StudentDashboard({ section = 'dashboard' }) {
                                                 </div>
                                                 <div>
                                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</p>
-                                                    <p className="text-sm text-gray-700 mt-1">{req.reason}</p>
+                                                    <ExpandableReason text={req.reason} />
                                                 </div>
 
                                                 {req.supporting_document && (

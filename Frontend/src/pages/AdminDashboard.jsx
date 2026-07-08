@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { adminDashboardAPI, systemSettingsAPI } from '../services/api';
+import Select from "react-select";
 import {
     Users, GraduationCap, TrendingUp, Calendar, RefreshCw,
     AlertTriangle, Clock, ShieldAlert, ChevronDown, ChevronUp,
@@ -299,15 +300,21 @@ export default function AdminDashboard() {
                             const departments = [...new Set(facultyPerformance.map(f => f.department).filter(Boolean))].sort();
                             if (departments.length <= 1) return null;
                             return (
-                                <select
-                                    value={selectedDepartment}
-                                    onChange={(e) => setSelectedDepartment(e.target.value)}
-                                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-900 focus:outline-none"
-                                >
-                                    {departments.map(dept => (
-                                        <option key={dept} value={dept}>{dept}</option>
-                                    ))}
-                                </select>
+                                <Select
+                                      value={selectedDepartment ? { value: selectedDepartment, label: selectedDepartment } : null}
+                                      onChange={(opt) => setSelectedDepartment(opt ? opt.value : 'All')}
+                                      options={[{ value: 'All', label: 'All Departments' }, ...departments.map(d => ({ value: d, label: d }))]}
+                                      isClearable={false}
+                                      styles={{
+                                        control: (base) => ({
+                                          ...base,
+                                          minHeight: "42px",
+                                          minWidth: "180px",
+                                          borderRadius: "0.5rem",
+                                          borderColor: "#d1d5db"
+                                        })
+                                      }}
+                                  />
                             );
                         })()}
                     </div>
